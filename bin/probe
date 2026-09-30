@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Where does Fire Emblem Heroes keep its data on this device, and can adb read it? No changes made.
+#   DEVICE=<serial> bin/probe      (a phone over USB; serial from `adb devices`)
+source "$(dirname "$0")/_lib.sh"
+connect
+root=no
+if adb_ root 2>&1 | grep -qiE "already running as root|restarting adbd as root"; then connect; root=yes; fi
+echo "device:  $(adb_ shell getprop ro.product.model | tr -d '\r')  Android $(adb_ shell getprop ro.build.version.release | tr -d '\r')  adb root: $root"
+echo "game:    $(adb_ shell dumpsys package $PKG | grep -m1 versionName | tr -d '\r ' || echo 'not installed')"
+echo "apks:"; adb_ shell pm path "$PKG" | tr -d '\r' | sed 's/^package:/  /'
+for d in /sdcard/Android/data/$PKG /sdcard/Android/obb/$PKG /data/data/$PKG; do
+  n=$(adb_ shell "find $d -type f 2>/dev/null | wc -l" | tr -d '\r ')
+  size=$(adb_ shell "du -sh $d 2>/dev/null | cut -f1" | tr -d '\r')
+  echo "  $d: ${n:-0} files readable, ${size:-unreadable}"
+done

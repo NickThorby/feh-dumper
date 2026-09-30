@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# The device's Google Services Framework id, for https://www.google.com/android/uncertified
+# (ReDroid is an uncertified device: Play refuses to sign in until it is registered).
+source "$(dirname "$0")/_lib.sh"
+connect
+adb_ root >/dev/null 2>&1 || true
+connect
+db=/data/data/com.google.android.gsf/databases/gservices.db
+id=$(adb_ shell "sqlite3 $db \"select value from main where name='android_id';\"" 2>/dev/null | tr -d '\r')
+if [[ -z $id ]]; then
+  # no sqlite3 on the device: read the database here
+  tmp=$(mktemp -d); adb_ pull "$db" "$tmp/g.db" >/dev/null
+  id=$(python3 -c "import sqlite3,sys; print(sqlite3.connect(sys.argv[1]).execute(\"select value from main where name='android_id'\").fetchone()[0])" "$tmp/g.db")
+  rm -rf "$tmp"
+fi
+[[ -n $id ]] || { echo "no GSF id yet: open the Play Store once, then retry" >&2; exit 1; }
+echo "$id"
+echo "Register it at https://www.google.com/android/uncertified (signed in with the Google account"
+echo "you'll use in Play), then wait a few minutes, restart (bin/down; bin/up) and sign in." >&2

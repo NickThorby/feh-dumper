@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Android log, filtered to the game, crashes and ARM translation. bin/logcat -a for everything.
+source "$(dirname "$0")/_lib.sh"
+connect
+if [[ ${1:-} == -a ]]; then adb_ logcat; exit; fi
+adb_ logcat -v time | grep --line-buffered -iE "$PKG|zaba|FATAL|AndroidRuntime|DEBUG *:|libc *:|native.?bridge|ndk_translation|houdini"

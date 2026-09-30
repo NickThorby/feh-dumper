@@ -1,0 +1,8 @@
+# Android's /data (game install, Google account, downloaded game data)
+state/
+# dumped game data: large, and game files
+dumps/
+# image build workspace (cloned redroid-script, downloads, venv)
+.build/
+.env
+__pycache__/

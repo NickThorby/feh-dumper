@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# How to see and use the Android screen from another computer (scrcpy mirrors it over adb).
+source "$(dirname "$0")/_lib.sh"
+ip=$(hostname -I | awk '{print $1}')
+cat <<MSG
+On the Mac (once: brew install scrcpy android-platform-tools):
+  adb connect $ip:5555 && scrcpy -s $ip:5555 --max-fps 15
+MSG

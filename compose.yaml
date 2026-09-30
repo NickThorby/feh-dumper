@@ -1,0 +1,18 @@
+# Android (ReDroid) for dumping Fire Emblem Heroes' data. Start with bin/up, not directly.
+# Image: built by image/build.sh (FEH_IMAGE in .env). Android's /data persists in ./state/data.
+services:
+  feh-android:
+    image: ${FEH_IMAGE:?run image/build.sh first}
+    container_name: feh-android
+    privileged: true             # binder devices; ReDroid needs it
+    volumes:
+      - ./state/data:/data
+    ports:
+      # adb. Home LAN only: never forward this port on the router (adb gives full control).
+      - "${ADB_BIND:-0.0.0.0}:5555:5555"
+    command:
+      - androidboot.redroid_gpu_mode=guest   # software rendering: Android can't use the NVIDIA card
+      - androidboot.use_memfd=true           # no ashmem in Debian's kernel
+      - androidboot.redroid_width=${WIDTH:-720}
+      - androidboot.redroid_height=${HEIGHT:-1280}
+      - androidboot.redroid_dpi=${DPI:-320}

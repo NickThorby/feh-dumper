@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# adb shell on the device (as root on ReDroid).
+source "$(dirname "$0")/_lib.sh"
+connect
+adb_ root >/dev/null 2>&1 || true
+connect
+adb_ shell "$@"

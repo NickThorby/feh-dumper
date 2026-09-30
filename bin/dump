@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# Copy Fire Emblem Heroes' installed APKs and downloaded data off the device into
+# dumps/<date>-v<version>/, with manifest.json (every file's size and sha256).
+#   bin/dump                        the ReDroid container (adb root: everything)
+#   DEVICE=<serial> bin/dump        a phone over USB (no root: shared storage + APKs only)
+source "$(dirname "$0")/_lib.sh"
+connect
+root=no
+if adb_ root 2>&1 | grep -qiE "already running as root|restarting adbd as root"; then connect; root=yes; fi
+
+version=$(adb_ shell dumpsys package "$PKG" | grep -m1 -o 'versionName=[^ ]*' | cut -d= -f2 | tr -d '\r')
+[[ -n $version ]] || { echo "$PKG is not installed on $DEVICE" >&2; exit 1; }
+out="$ROOT/dumps/$(date +%Y-%m-%d)-v$version"
+mkdir -p "$out/apk"
+echo "== $DEVICE: FEH $version (adb root: $root) -> $out"
+
+adb_ shell am force-stop "$PKG"      # no half-written files
+for p in $(adb_ shell pm path "$PKG" | tr -d '\r' | sed 's/^package://'); do
+  adb_ pull -q "$p" "$out/apk/" >/dev/null
+done
+
+dirs=("/sdcard/Android/data/$PKG" "/sdcard/Android/obb/$PKG")
+[[ $root == yes ]] && dirs+=("/data/data/$PKG")
+for d in "${dirs[@]}"; do
+  if [[ $(adb_ shell "ls -d $d 2>/dev/null" | tr -d '\r') == "$d" ]]; then
+    mkdir -p "$out/device$(dirname "$d")"
+    echo "  pulling $d"
+    adb_ pull -q "$d" "$out/device$(dirname "$d")/" >/dev/null
+  fi
+done
+[[ $root == yes ]] || echo "  (no root: /data/data/$PKG not copied)"
+
+python3 "$ROOT/tools/manifest.py" "$out" --version "$version" --device "$DEVICE" --root "$root"

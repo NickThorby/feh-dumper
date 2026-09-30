@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# Run on the Mac: copy dumps from the box.   bin/fetch-dump [user@host] [dest]
+set -euo pipefail
+host=${1:-nick@192.168.0.10}
+dest=${2:-$(cd "$(dirname "$0")/.." && pwd)/dumps}
+mkdir -p "$dest"
+rsync -a --progress "$host:feh-dumper/dumps/" "$dest/"

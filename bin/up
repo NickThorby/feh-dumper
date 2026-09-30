@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Start Android and wait until it has booted.
+source "$(dirname "$0")/_lib.sh"
+cd "$ROOT"
+[[ -e /dev/hwbinder ]] || { echo "binder not set up: sudo host/setup.sh" >&2; exit 1; }
+mkdir -p state/data
+docker compose up -d
+echo -n "booting"
+for _ in $(seq 1 120); do
+  adb connect "$DEVICE" >/dev/null 2>&1 || true
+  if [[ $(adb -s "$DEVICE" shell getprop sys.boot_completed 2>/dev/null | tr -d '\r') == 1 ]]; then
+    echo " OK"
+    echo "abi: $(adb_ shell getprop ro.product.cpu.abilist | tr -d '\r')"
+    echo "screen: bin/screen"
+    exit 0
+  fi
+  echo -n "."; sleep 5
+done
+echo; echo "not booted after 10 min: docker logs feh-android; bin/logcat" >&2; exit 1
