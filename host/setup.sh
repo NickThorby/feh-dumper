@@ -26,6 +26,11 @@ if [[ -e /dev/binder && ! -e /dev/hwbinder ]]; then
   rmmod binder_linux || { echo "binder_linux is in use; stop containers using it and re-run" >&2; exit 1; }
 fi
 modprobe binder_linux
+# Android's services (servicemanager runs as uid 1000, not root) must open the devices; Debian
+# creates them root-only (0600), which leaves Android stuck at boot ("Binder driver could not be opened").
+echo 'KERNEL=="binder|hwbinder|vndbinder", MODE="0666"' > /etc/udev/rules.d/99-feh-dumper-binder.rules
+udevadm control --reload-rules
+chmod 666 /dev/binder /dev/hwbinder /dev/vndbinder
 for d in binder hwbinder vndbinder; do
   [[ -e /dev/$d ]] || { echo "missing /dev/$d after loading binder_linux" >&2; exit 1; }
 done
