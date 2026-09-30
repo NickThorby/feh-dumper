@@ -1,5 +1,14 @@
 # feh-dumper
 
+> **Status (2026-09-30): Fire Emblem Heroes 10.9.0 does not run in ReDroid.** It starts, signs in to
+> Google Play Games, then crashes itself ~10 s later in its graphics thread, at the same place under
+> both ARM translators (libndk and libhoudini) — a deliberate crash in the game's code, not a
+> translation bug. BlueStacks and MuMu on macOS end the same way. A real device is needed: an
+> unrooted phone can't reach the game's data (it lives only in the app's private
+> `/data/user/0/com.nintendo.zaba`; no shared-storage copy, no `allowBackup`), so a dedicated rootable
+> spare phone is the remaining route — `DEVICE=<serial> bin/dump` supports that. The scripts below work
+> up to the point of launching the game.
+
 Dump Fire Emblem Heroes' game data yourself: Android in Docker ([ReDroid](https://github.com/remote-android/redroid-doc))
 on a Linux box, with Google Play and ARM translation, and scripts that copy the game's APKs and
 downloaded data off it with a manifest. The dumps feed the `fire-emblem-legends-data` catalogue (a
