@@ -15,5 +15,5 @@ if [[ -z $id ]]; then
 fi
 [[ -n $id ]] || { echo "no GSF id yet: open the Play Store once, then retry" >&2; exit 1; }
 echo "$id"
-echo "Register it at https://www.google.com/android/uncertified (signed in with the Google account"
+echo "Register it at https://www.google.com/android/uncertified (signed in with the Google account" >&2
 echo "you'll use in Play), then wait a few minutes, restart (bin/down; bin/up) and sign in." >&2
