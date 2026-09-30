@@ -2,7 +2,8 @@
 
 Reference scripts used to get FEH 10.9.0 running in Waydroid on a Debian 13 box (Intel i7-8700K / UHD 630).
 See the top-level [README](../README.md#waydroid-route) for the overview and why this works when true
-emulators don't.
+emulators don't. **For the full start-to-finish procedure on a fresh box — including the prerequisites these
+scripts assume — follow [`RUNBOOK.md`](RUNBOOK.md).** This file is just the per-script reference.
 
 > These were written for user `nick` on one box and hardcode paths like `/home/nick/...` and the Intel GPU.
 > Adjust the paths/user for your setup. Run the `sudo` ones with root; run `physical-display.sh` at the

@@ -21,7 +21,8 @@ APKs and downloaded data off it, over adb, with a checksum manifest. The dumps f
 
 Runs FEH on a Linux box with an x86 GPU. Tested on Debian 13 (kernel 6.12), Intel i7-8700K (UHD 630 iGPU).
 The scripts referenced here are in [`waydroid/`](waydroid/) — see [`waydroid/README.md`](waydroid/README.md)
-for the exact commands and the gotchas each one fixes.
+for what each does. **For a complete, start-to-finish fresh-box procedure (every prerequisite and quirk in
+order), follow [`waydroid/RUNBOOK.md`](waydroid/RUNBOOK.md).** The summary below is that runbook in brief.
 
 1. **Install + ARM translation:** `sudo bash waydroid/01-install-waydroid.sh` — Waydroid from repo.waydro.id,
    `waydroid init` (VANILLA), and **libhoudini** (Intel's arm64 translation) via
@@ -43,18 +44,41 @@ for the exact commands and the gotchas each one fixes.
 5. **Dump:** `DEVICE=<waydroid-adb> bin/dump`, or copy straight from the host — the game's data is bind-mounted
    at `~/.local/share/waydroid/data/data/com.nintendo.zaba` (no adb needed).
 
-### Multiple languages
+## The dump (three languages)
 
-Switching the in-game language **deletes the other language's assets** from the live install (JP voices live
-in `files/assets/JPJA`, EN voices in `ENCommon`, per-locale text in `USEN`/`EUEN`/…; `Common` is shared).
-To collect them all: capture one language state, switch language in-game, let it download, capture again —
-`rsync` each into one folder **without `--delete`** so they accumulate. Notes:
+A complete FEH 10.9.0 dump was captured this way (2026-09-30) — **~11 GB**, laid out under
+`data/com.nintendo.zaba/files/assets/`:
+
+| Dir | Size | What |
+|---|---|---|
+| `Common` | 5.6 GB | shared, region-independent game assets (art, models, BGM, SFX) |
+| `JPJA` | 2.5 GB | **Japanese** text + voices, extracted (full roster) |
+| `ENCommon` | 2.3 GB | **English** voices — 33,695 `VOICE_*.ckb` |
+| `USEN` / `EUEN` | 25 MB each | US / EU English text (`Message`) |
+
+Plus the Nintendo-signed base APK. Voices exist for **both Japanese and English**; US and EU English differ
+only in the `Message` text (their voices are the same `ENCommon` set).
+
+**Three languages, one folder.** Switching the in-game language **deletes the other language's assets** from
+the live install, so each language was captured as its own in-game state (US → JP → EU → US) and `rsync`'d
+into one folder **without `--delete`** so they accumulate. Every state was hash-verified against the source;
+`MASTER-sha256sums.txt` (127,228 files) is the combined integrity reference, with per-round manifests and
+verify logs kept alongside. Re-verify anytime: `cd data && shasum -a 256 -c ../MASTER-sha256sums.txt`.
+
+Method notes (also in the [runbook](waydroid/RUNBOOK.md#quirks--troubleshooting-everything-that-bit-us)):
 
 - A whole-tree `rsync` **stalls** on the ~85k-file scan over a USB drive; `rsync` just the new dir (e.g.
   `EUEN`) then **hash-verify the whole state** to catch anything missed.
 - The obfuscated-name files (`SnZ77WFq`, `V9GiILGz`, `*~`) are FEH's mutable per-state asset catalog/index.
-- **Always keep the per-round `sha256` manifests and re-verify** — on a flaky external drive this caught a
-  silently-corrupted `VOICE_*.ckb` that was then re-copied.
+- **Keep the `sha256` manifests and re-verify** — on a flaky external drive this caught a silently-corrupted
+  `VOICE_*.ckb` that was then re-copied.
+
+### Ready to extract — but not here
+
+The dump is **raw, packed game data**: `.ckb` voice/audio banks, `Message/*.bin.lz` (LZ-compressed) text, and
+encrypted asset catalogs. It is ready to be **decoded and extracted**, but doing so — unpacking the formats,
+mapping files to heroes/skills, cataloguing — is **out of scope for this repo**, which only gets the bytes off
+the device. That work lives in the sibling **`fire-emblem-legends-data`** catalogue.
 
 ## Why emulators fail
 
