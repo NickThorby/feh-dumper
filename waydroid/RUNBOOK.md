@@ -41,13 +41,25 @@ sudo modprobe loop nf_nat nft_nat nft_masq nft_chain_nat
 ```
 
 **c. Host firewall** — open the `waydroid0` bridge, or the container gets no DHCP lease and no internet
-(UFW/Docker set the FORWARD policy to drop). These are runtime rules; persist them via your firewall config:
+(UFW/Docker set the FORWARD policy to drop). Quick runtime rules:
 
 ```sh
 sudo nft insert rule ip filter INPUT   iifname "waydroid0" accept
 sudo nft insert rule ip filter FORWARD iifname "waydroid0" accept
 sudo nft insert rule ip filter FORWARD oifname "waydroid0" accept
 ```
+
+**These `nft insert` rules do NOT survive a reboot** — UFW/Docker rebuild the ruleset at boot and drop them.
+Either re-run them after each reboot (before starting a session) or make them persistent with UFW, which
+reloads them on boot:
+
+```sh
+sudo ufw allow in on waydroid0                 # INPUT: DHCP/DNS from the container to the host
+sudo ufw route allow in on waydroid0           # FORWARD: container -> internet
+sudo ufw route allow out on waydroid0          # FORWARD: replies back to the container
+```
+
+See [Surviving a reboot](#surviving-a-reboot) for the full list of what persists and what to re-apply.
 
 **d. PulseAudio** running for the user — the container bind-mounts the pulse socket and won't start without it,
 even headless:
@@ -143,6 +155,28 @@ DEVICE=192.168.240.112:5555 bin/dump
 
 For the multi-language dump and verification method, see [The dump](../README.md#the-dump-three-languages) in
 the top-level README.
+
+---
+
+## Surviving a reboot
+
+**Persists automatically** (nothing to do): the FEH data on disk
+(`~/.local/share/waydroid/data/data/com.nintendo.zaba`); the binder devices (udev/module config from §0a);
+the extra kernel modules (`/etc/modules-load.d/waydroid-feh.conf`, §0b); the `waydroid-net.sh` nftables patch
+(a file edit, §2 — but a `waydroid` package update will revert it, so re-run `04-fix-net.sh` after upgrades);
+and the `waydroid-container` service (`systemctl enable`d).
+
+**Does NOT persist — re-apply after each reboot before starting a session:**
+
+1. **The `waydroid0` firewall rules** (§0c) — the runtime `nft insert` rules are gone after boot; without them
+   the container gets no DHCP/internet. Re-run the three `nft insert` commands, or persist them once with the
+   `ufw ...` commands in §0c.
+2. **PulseAudio** for the user (§0d) — `pulseaudio --start --exit-idle-time=-1`.
+3. **The weston compositor + Waydroid session** — not a boot service: run `physical-display.sh` at the console
+   (or `restart-session.sh` for a headless session). The container service starts on boot, but the *session*
+   (the user side that renders + connects) is started by hand.
+
+So a clean "after reboot, play/dump again" sequence is: firewall rules → PulseAudio → `physical-display.sh`.
 
 ---
 
