@@ -18,7 +18,7 @@ copy whatever adb can read.
 ## Fresh box → dump
 
 ```sh
-git clone git@github.com:NickThorby/feh-dumper.git ~/feh-dumper && cd ~/feh-dumper
+git clone https://github.com/NickThorby/feh-dumper.git ~/feh-dumper && cd ~/feh-dumper
 sudo host/setup.sh           # packages, binder module (persisted), checks
 image/build.sh               # ReDroid 11 + OpenGapps + libndk -> feh-android:… (~10 min, downloads ~1 GB)
 bin/up                       # starts the container, waits for boot, prints the ABIs (must include arm64-v8a)
