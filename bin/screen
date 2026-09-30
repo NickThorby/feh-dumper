@@ -4,5 +4,6 @@ source "$(dirname "$0")/_lib.sh"
 ip=$(hostname -I | awk '{print $1}')
 cat <<MSG
 On the Mac (once: brew install scrcpy android-platform-tools):
-  adb connect $ip:5555 && scrcpy -s $ip:5555 --max-fps 15
+  adb connect $ip:5555 && scrcpy -s $ip:5555 --no-audio --force-adb-forward --max-fps 15
+(no Opus audio encoder in this Android build; adb reverse is unreliable over the network)
 MSG
