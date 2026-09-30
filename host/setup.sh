@@ -6,6 +6,7 @@ set -euo pipefail
 [[ $EUID -eq 0 ]] || { echo "run with sudo: sudo $0" >&2; exit 1; }
 
 echo "== packages"
+export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq adb lzip git curl python3-venv rsync >/dev/null
 
