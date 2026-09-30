@@ -37,5 +37,7 @@ built="redroid/redroid:${ANDROID}_${GAPPS}_${TRANSLATION}"
 tag="feh-android:${ANDROID}_${GAPPS}_${TRANSLATION}"
 docker image inspect "$built" >/dev/null || { echo "build failed: $built not found" >&2; exit 1; }
 docker tag "$built" "$tag"
-{ grep -v '^FEH_IMAGE=' .env 2>/dev/null || true; echo "FEH_IMAGE=$tag"; } > .env.tmp && mv .env.tmp .env
+bridge=$([[ $TRANSLATION == houdini ]] && echo libhoudini.so || echo libnb.so)
+{ grep -vE '^(FEH_IMAGE|NATIVE_BRIDGE)=' .env 2>/dev/null || true; echo "FEH_IMAGE=$tag"; echo "NATIVE_BRIDGE=$bridge"; } > .env.tmp
+mv .env.tmp .env
 echo "OK: $tag (in .env). Next: bin/up"
