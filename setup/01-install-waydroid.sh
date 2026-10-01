@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Install Waydroid + libhoudini (ARM translation) on Debian 13 for the FEH crash test.
-# Run as root:  sudo bash ~/feh-waydroid/01-install-waydroid.sh
-# Idempotent-ish; safe to re-run. Logs to ~/feh-waydroid/install.log too.
+# Install Waydroid + libhoudini (ARM translation) on Debian 13.
+#   sudo setup/01-install-waydroid.sh
+# Idempotent-ish; safe to re-run. Logs to logs/install.log too.
 set -euxo pipefail
 export DEBIAN_FRONTEND=noninteractive
 
-# Log everything to a file (readable by nick) as well as the console.
-exec > >(tee -a /home/nick/feh-waydroid/install.log) 2>&1
+# Log everything to a file as well as the console.
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+mkdir -p "$ROOT/logs"; [[ -n ${SUDO_USER:-} ]] && chown "$SUDO_USER:" "$ROOT/logs"   # bin/session logs there too
+exec > >(tee -a "$ROOT/logs/install.log") 2>&1
 
 # --- 1. Waydroid apt repo + package ---------------------------------------
 apt-get update -y
@@ -45,10 +47,10 @@ cd waydroid_script
 python3 -m venv venv
 venv/bin/pip install -q --upgrade pip
 venv/bin/pip install -q -r requirements.txt
-# Non-interactive install of Intel's libhoudini (best on this i7 CPU).
+# Non-interactive install of Intel's libhoudini (best on Intel CPUs; on AMD use libndk instead).
 venv/bin/python3 main.py install libhoudini
 
 echo
 echo "=== INSTALL DONE ==="
 echo "libhoudini installed. Waydroid must be restarted for it to take effect;"
-echo "the session step (run next, no sudo needed) will do that."
+echo "Next: sudo setup/02-netdeps.sh && sudo setup/03-fix-net.sh, then bin/session."

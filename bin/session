@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# (Re)start the Waydroid session headless and wait for Android to boot. Also the only thing that
+# reliably un-freezes adbd (a `waydroid container restart` does not).
+#   bin/session            as your user, not root (it uses sudo for `waydroid shell`)
+#   bin/session --props    then print the ABIs + Build identity FEH cares about
+# For anything interactive, use bin/display at the physical console instead.
+set -uo pipefail
+ROOT=$(cd "$(dirname "$0")/.." && pwd)
+mkdir -p "$ROOT/logs"
+export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
+export WAYLAND_DISPLAY=wayland-waydroid
+[[ -S $XDG_RUNTIME_DIR/bus ]] && export DBUS_SESSION_BUS_ADDRESS=unix:path=$XDG_RUNTIME_DIR/bus
+prop() { sudo waydroid shell -- getprop "$1" 2>/dev/null | tr -d '\r\n'; }
+
+sudo waydroid shell -- setprop persist.adb.tcp.port 5555 2>/dev/null
+waydroid session stop 2>/dev/null; sleep 3
+# the container bind-mounts the pulse socket and won't start without it
+[[ -S $XDG_RUNTIME_DIR/pulse/native ]] || pulseaudio --start --exit-idle-time=-1 2>/dev/null
+if [[ ! -S $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY ]]; then
+  nohup weston --backend=headless-backend.so --socket="$WAYLAND_DISPLAY" \
+        --width=720 --height=1280 --idle-time=0 >"$ROOT/logs/weston.log" 2>&1 &
+  sleep 4
+fi
+nohup waydroid session start >"$ROOT/logs/session.log" 2>&1 &
+
+echo -n "booting"
+for _ in $(seq 1 48); do
+  if [[ $(prop sys.boot_completed) == 1 ]]; then echo " OK"; break; fi
+  echo -n "."; sleep 5
+done
+[[ $(prop sys.boot_completed) == 1 ]] || { echo; echo "not booted after 4 min: see logs/session.log" >&2; exit 1; }
+
+if [[ ${1:-} == --props ]]; then
+  echo "abi:           $(prop ro.product.cpu.abilist)   (must include arm64-v8a)"
+  echo "native bridge: $(prop ro.dalvik.vm.native.bridge)"
+  # FEH's isEmulator() checks Build.PRODUCT/MODEL for "sdk"
+  for p in ro.product.name ro.product.model ro.product.device ro.build.fingerprint ro.build.type; do
+    printf '%-22s %s\n' "$p:" "$(prop $p)"
+  done
+fi

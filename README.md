@@ -1,138 +1,109 @@
 # feh-dumper
 
-> **Status (2026-09-30): Fire Emblem Heroes 10.9.0 runs in [Waydroid](https://waydro.id/), and a
-> complete data dump — Japanese + English voices, and US/EU/Japanese text — has been captured and
-> hash-verified.** It does **not** run in true emulators (ReDroid, BlueStacks, MuMu, Android Studio's
-> AVD): they all crash identically ~10 s in with a `SIGSEGV` in the game's own `libcocos2dcpp.so`
-> (every frame from `Cocos2dxRenderer.onDrawFrame`), because the game checks `Build.PRODUCT` for
-> `"sdk"` and deliberately self-destructs — see [Why emulators fail](#why-emulators-fail). **Waydroid**
-> boots a LineageOS image whose `Build.PRODUCT` is `lineage_waydroid_x86_64` (no `"sdk"`), so the check
-> passes and the game runs (arm64 via libhoudini). See the **[Waydroid route](#waydroid-route)**.
+Dump Fire Emblem Heroes' game data yourself, without a rooted phone: run the game in
+**[Waydroid](https://waydro.id/)** on a Linux box, let it download everything, then copy its app-private data
+straight off the host. The dumps feed the `fire-emblem-legends-data` catalogue (a separate repo); decoding the
+game's raw formats is not done here.
 
-Dump Fire Emblem Heroes' game data yourself. Two on-box Android options are here — **Waydroid** (an LXC
-container; the game runs in it) and **[ReDroid](https://github.com/remote-android/redroid-doc)** (Docker;
-gets you an Android, but the game self-destructs in it). Either way, the `bin/*` scripts copy the game's
-APKs and downloaded data off it, over adb, with a checksum manifest. The dumps feed the
-`fire-emblem-legends-data` catalogue (a separate repo); decoding the game's raw formats is not done here.
+> **Status (2026-09-30):** Fire Emblem Heroes 10.9.0 runs in Waydroid, and a complete data dump (Japanese +
+> English voices, plus US/EU/Japanese text) has been captured and hash-verified. True emulators don't work:
+> see [Why emulators fail](#why-emulators-fail).
 
-`bin/*` also work against a real device over USB/adb (`DEVICE=<serial> bin/probe` / `bin/dump`).
+## Quick start
 
-## Waydroid route
+Tested on Debian 13 (kernel 6.12), Intel i7-8700K (UHD 630 iGPU), with a spare monitor and USB keyboard/mouse.
+**[`RUNBOOK.md`](RUNBOOK.md) is the full fresh-box procedure** with every prerequisite and quirk. This is the
+short version:
 
-Runs FEH on a Linux box with an x86 GPU. Tested on Debian 13 (kernel 6.12), Intel i7-8700K (UHD 630 iGPU).
-The scripts referenced here are in [`waydroid/`](waydroid/) — see [`waydroid/README.md`](waydroid/README.md)
-for what each does. **For a complete, start-to-finish fresh-box procedure (every prerequisite and quirk in
-order), follow [`waydroid/RUNBOOK.md`](waydroid/RUNBOOK.md).** The summary below is that runbook in brief.
+```sh
+sudo setup/00-host-prereqs.sh     # binder devices, kernel modules, firewall for waydroid0, adb/pulseaudio
+sudo setup/01-install-waydroid.sh # Waydroid (VANILLA) + weston + libhoudini (arm64 translation)
+sudo setup/02-netdeps.sh          # iptables + dnsmasq (Debian's waydroid package omits them)
+sudo setup/03-fix-net.sh          # waydroid-net.sh -> nftables backend (legacy iptables is broken on trixie)
+bin/session --props               # boot headless; abilist must include arm64-v8a, product has no "sdk"
+```
 
-1. **Install + ARM translation:** `sudo bash waydroid/01-install-waydroid.sh` — Waydroid from repo.waydro.id,
-   `waydroid init` (VANILLA), and **libhoudini** (Intel's arm64 translation) via
-   [waydroid_script](https://github.com/casualsnek/waydroid_script). Also installs `weston` (headless box).
-2. **Networking:** `sudo bash waydroid/03-netdeps.sh` (Debian's `waydroid` pkg omits `iptables`/`dnsmasq`)
-   then `sudo bash waydroid/04-fix-net.sh` (makes `waydroid-net.sh` use the **nftables** backend — the
-   legacy iptables `mangle`/`CHECKSUM` path is broken on trixie). Also needs modules `nft_masq` + `loop`
-   (persisted to `/etc/modules-load.d/`), and the host firewall opened for the `waydroid0` bridge
-   (`nft insert rule ip filter INPUT/FORWARD iifname/oifname "waydroid0" accept` — UFW/Docker default-drop).
-3. **GApps + sign-in:** FEH hard-requires Google Play services. Install GApps
-   (`waydroid_script install gapps`), get the GSF id (`bin/gsf-id` against the Waydroid adb), register it at
-   <https://www.google.com/android/uncertified>, wait, then sign a Google account into Play. This clears
-   FEH's `803-4204` app-store error and stabilises the home screen.
-4. **Run it — on a physical monitor.** Headless software rendering hangs repeatedly (adbd freezes, the
-   container wedges). Plug an HDMI/DP monitor + USB keyboard/mouse into the box, log in at the console, and
-   `bash waydroid/physical-display.sh` — this runs weston on the **DRM backend (Intel GPU, hardware GL)**,
-   which is stable. Install FEH from Play (or `adb install`), play as a **guest**, finish the tutorial, and
-   let it download.
-5. **Dump:** `DEVICE=<waydroid-adb> bin/dump`, or copy straight from the host — the game's data is bind-mounted
-   at `~/.local/share/waydroid/data/data/com.nintendo.zaba` (no adb needed).
+Then install GApps, register the device at <https://www.google.com/android/uncertified> (`bin/gsf-id`), and sign
+in to Play. FEH hard-requires Play services. Then, **at the physical console**, run `bin/display`, install
+FEH, play as a guest through the tutorial, and let it download. Copy the data from
+`~/.local/share/waydroid/data/data/com.nintendo.zaba` on the host, or use `bin/dump` over adb.
+
+## Scripts
+
+| Script | Run as | What |
+|---|---|---|
+| `setup/00-host-prereqs.sh` | root | packages; binder devices (module + udev 0666); `loop`/`nft_masq` modules; UFW rules for `waydroid0`. Persists. |
+| `setup/01-install-waydroid.sh` | root | repo.waydro.id apt repo + `waydroid`, `weston`; `waydroid init -s VANILLA`; libhoudini via [waydroid_script](https://github.com/casualsnek/waydroid_script) |
+| `setup/02-netdeps.sh` | root | `iptables` + `dnsmasq-base` |
+| `setup/03-fix-net.sh` | root | patches `waydroid-net.sh` to nftables (backs up the original); re-run after a `waydroid` upgrade |
+| `bin/session [--props]` | user | (re)start a headless session and wait for boot. This is the fix when adbd freezes. |
+| `bin/display` | user, **at the console** | weston on the DRM backend (hardware GL) + session + FEH: the stable way to play |
+| `bin/gsf-id` | user | the id Google's uncertified-device form needs |
+| `bin/probe` | user | where the game's data is and whether adb can read it (read-only) |
+| `bin/dump` | user | APKs + game data → `dumps/<date>-v<version>/` + `manifest.json` (sha256 per file) |
+| `bin/shell`, `bin/logcat` | user | adb shell (root); log filtered to the game, crashes and ARM translation |
+| `bin/screen` | user | scrcpy-over-SSH-tunnel recipe for viewing from another computer |
+| `bin/fetch-dump` | on the Mac | rsync `dumps/` from the box |
+
+The adb scripts default to Waydroid's adbd at `192.168.240.112:5555` (check with `waydroid status`).
+`DEVICE=<serial>` points them at anything else, e.g. a real phone over USB. Setup and session logs go to `logs/`.
 
 ## The dump (three languages)
 
-A complete FEH 10.9.0 dump was captured this way (2026-09-30) — **~11 GB**, laid out under
+A complete FEH 10.9.0 dump was captured this way (2026-09-30). It is **~11 GB**, laid out under
 `data/com.nintendo.zaba/files/assets/`:
 
 | Dir | Size | What |
 |---|---|---|
 | `Common` | 5.6 GB | shared, region-independent game assets (art, models, BGM, SFX) |
 | `JPJA` | 2.5 GB | **Japanese** text + voices, extracted (full roster) |
-| `ENCommon` | 2.3 GB | **English** voices — 33,695 `VOICE_*.ckb` |
+| `ENCommon` | 2.3 GB | **English** voices: 33,695 `VOICE_*.ckb` |
 | `USEN` / `EUEN` | 25 MB each | US / EU English text (`Message`) |
 
-Plus the Nintendo-signed base APK. Voices exist for **both Japanese and English**; US and EU English differ
-only in the `Message` text (their voices are the same `ENCommon` set).
+Plus the Nintendo-signed base APK. Voices exist for **both Japanese and English**. US and EU English differ
+only in the `Message` text; their voices are the same `ENCommon` set.
 
 **Three languages, one folder.** Switching the in-game language **deletes the other language's assets** from
-the live install, so each language was captured as its own in-game state (US → JP → EU → US) and `rsync`'d
-into one folder **without `--delete`** so they accumulate. Every state was hash-verified against the source;
+the live install. So each language was captured as its own in-game state (US → JP → EU → US) and `rsync`'d
+into one folder **without `--delete`** so they accumulate. Every state was hash-verified against the source.
 `MASTER-sha256sums.txt` (127,228 files) is the combined integrity reference, with per-round manifests and
 verify logs kept alongside. Re-verify anytime: `cd data && shasum -a 256 -c ../MASTER-sha256sums.txt`.
 
-Method notes (also in the [runbook](waydroid/RUNBOOK.md#quirks--troubleshooting-everything-that-bit-us)):
+Method notes (also in the [runbook](RUNBOOK.md#quirks--troubleshooting-everything-that-bit-us)):
 
-- A whole-tree `rsync` **stalls** on the ~85k-file scan over a USB drive; `rsync` just the new dir (e.g.
-  `EUEN`) then **hash-verify the whole state** to catch anything missed.
+- A whole-tree `rsync` **stalls** on the ~85k-file scan over a USB drive. `rsync` just the new dir (e.g.
+  `EUEN`), then **hash-verify the whole state** to catch anything missed.
 - The obfuscated-name files (`SnZ77WFq`, `V9GiILGz`, `*~`) are FEH's mutable per-state asset catalog/index.
-- **Keep the `sha256` manifests and re-verify** — on a flaky external drive this caught a silently-corrupted
-  `VOICE_*.ckb` that was then re-copied.
+- **Keep the `sha256` manifests and re-verify.** On a flaky external drive this caught a silently corrupted
+  `VOICE_*.ckb`, which was then re-copied.
 
-### Ready to extract — but not here
+### Ready to extract, but not here
 
 The dump is **raw, packed game data**: `.ckb` voice/audio banks, `Message/*.bin.lz` (LZ-compressed) text, and
-encrypted asset catalogs. It is ready to be **decoded and extracted**, but doing so — unpacking the formats,
-mapping files to heroes/skills, cataloguing — is **out of scope for this repo**, which only gets the bytes off
-the device. That work lives in the sibling **`fire-emblem-legends-data`** catalogue.
+encrypted asset catalogs. Decoding and extracting it (unpacking the formats, mapping files to heroes and skills,
+cataloguing) is **out of scope for this repo**, which only gets the bytes off the device. That work lives in
+the sibling **`fire-emblem-legends-data`** catalogue.
 
 ## Why emulators fail
 
-FEH runs ~10 s, then its GL thread takes `SIGSEGV` (null-pointer write, fault addr `0xa60`) at the same
-instruction in `lib/arm64-v8a/libcocos2dcpp.so` (`pc 0x3d6d9a0`, the stub `mov w8,#0xa60; mov w9,#1;
-strb w9,[x8]`), reached every frame from `org.cocos2dx.lib.Cocos2dxRenderer.onDrawFrame`. Identical across
-seven environments: ReDroid+libndk, ReDroid+libhoudini, BlueStacks, MuMu, and Android Studio's arm64 AVD
-on an M1 Pro under software SwiftShader, ANGLE, and the real M1 Pro GPU via Metal. So it is **not** ARM
-translation (M1 runs arm64 natively), **not** the GPU (crashes the same on real Metal), and **not** root
-(the AVD is a stock unrooted `user` build). The common factor is that they are emulators: the game logs
-`isEmulator=true` (its `Cocos2dxActivity.isAndroidEmulator()` checks `Build.PRODUCT`/`MODEL` for `"sdk"`)
-just before dying. Waydroid's LineageOS fingerprint has no `"sdk"`, so it slips past.
+This project first tried ReDroid (Docker), then BlueStacks, MuMu and Android Studio's AVD. All of them crash the
+same way. FEH runs ~10 s, then its GL thread takes `SIGSEGV` (null-pointer write, fault addr `0xa60`) at the
+same instruction in `lib/arm64-v8a/libcocos2dcpp.so` (`pc 0x3d6d9a0`, the stub `mov w8,#0xa60; mov w9,#1;
+strb w9,[x8]`), reached every frame from `org.cocos2dx.lib.Cocos2dxRenderer.onDrawFrame`. This was identical
+across seven environments: ReDroid+libndk, ReDroid+libhoudini, BlueStacks, MuMu, and Android Studio's arm64
+AVD on an M1 Pro under software SwiftShader, ANGLE, and the real M1 Pro GPU via Metal. So the cause is **not**
+ARM translation (M1 runs arm64 natively), **not** the GPU (it crashes the same on real Metal), and **not** root
+(the AVD is a stock unrooted `user` build). The common factor is that they are emulators. The game logs
+`isEmulator=true` just before dying: its `Cocos2dxActivity.isAndroidEmulator()` checks `Build.PRODUCT`/`MODEL`
+for `"sdk"`. Waydroid's LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64`, with no `"sdk"`, so it
+slips past.
 
 The data lives only in app-private `/data/data/com.nintendo.zaba` (no `allowBackup`, no shared-storage copy;
-on Android 10+ even `/sdcard/Android/data` is closed to adb), so it needs **root, or a rooted container like
+on Android 10+ even `/sdcard/Android/data` is closed to adb). Getting it needs **root, or a container like
 Waydroid where the host owns `/data`**.
-
-## ReDroid route (Android boots; the game won't run in it)
-
-Kept because it sets up an Android with Play + ARM translation quickly. FEH self-destructs in it (above),
-so it is not a route to the data on its own, but the `bin/*` scripts and `host/setup.sh` come from here.
-
-```sh
-sudo host/setup.sh           # packages, binder module (persisted), checks
-image/build.sh               # ReDroid 11 + OpenGapps + libndk -> feh-android:… (~10 min, ~1 GB)
-bin/up                       # start the container, wait for boot, print the ABIs (must include arm64-v8a)
-bin/screen                   # scrcpy command to run on the Mac
-```
-
-Other images if you want to experiment: `TRANSLATION=houdini image/build.sh`,
-`ANDROID=12.0.0 GAPPS=mindthegapps image/build.sh` (a different Android version needs a fresh `state/`).
-
-## Scripts
-
-| Script | What |
-|---|---|
-| `waydroid/*.sh` | the Waydroid route (install, networking fixes, session, physical display) — see `waydroid/README.md` |
-| `host/setup.sh` | `sudo`; packages, binder module + its boot config; idempotent (ReDroid) |
-| `image/build.sh` | builds the ReDroid image via pinned [redroid-script](https://github.com/ayasa520/redroid-script) |
-| `bin/up`, `bin/down` | start/stop the `feh-android` (ReDroid) container |
-| `bin/screen` | scrcpy command for viewing/controlling the screen remotely |
-| `bin/shell`, `bin/logcat` | adb shell (root); filtered log |
-| `bin/gsf-id` | the id Google's uncertified-device form needs |
-| `bin/probe` | where the game's data is on a device and whether adb can read it (read-only) |
-| `bin/dump` | APKs + game data → `dumps/<date>-v<version>/` + `manifest.json` |
-| `bin/fetch-dump` | run on the Mac: copy dumps from the box |
-
-`DEVICE=<adb serial>` points the adb scripts at another device (default: `localhost:5555`). For Waydroid,
-connect adb to its container IP (`adb connect 192.168.240.112:5555`) or tunnel it.
 
 ## Notes
 
-- adb (port 5555) gives full control: keep it on the home LAN, never forward it on the router.
-- No ashmem / no binderfs in current Debian kernels: ReDroid boots with `androidboot.use_memfd=true`;
-  Waydroid uses the pre-created `/dev/binder,hwbinder,vndbinder` nodes.
-- Waydroid's adbd over TCP is flaky and only recovers with a full `waydroid session stop/start` (not
-  `container restart`); `sudo waydroid shell` (lxc-attach) + host-filesystem reads survive the hangs.
+- adb (port 5555) gives full control. Keep it on the home LAN and never forward it on the router.
+- Waydroid's adbd over TCP is flaky and only recovers with a full session restart (`bin/session`), not
+  `waydroid container restart`. `sudo waydroid shell` (lxc-attach) and host-filesystem reads survive the hangs.

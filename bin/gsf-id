@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The device's Google Services Framework id, for https://www.google.com/android/uncertified
-# (ReDroid is an uncertified device: Play refuses to sign in until it is registered).
+# (Waydroid is an uncertified device: Play refuses to sign in until it is registered).
 source "$(dirname "$0")/_lib.sh"
 connect
 adb_ root >/dev/null 2>&1 || true
@@ -16,4 +16,4 @@ fi
 [[ -n $id ]] || { echo "no GSF id yet: open the Play Store once, then retry" >&2; exit 1; }
 echo "$id"
 echo "Register it at https://www.google.com/android/uncertified (signed in with the Google account" >&2
-echo "you'll use in Play), then wait a few minutes, restart (bin/down; bin/up) and sign in." >&2
+echo "you'll use in Play), then wait ~10 minutes, restart (bin/session) and sign in." >&2

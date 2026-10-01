@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 # Make Waydroid networking use the nftables backend (trixie kernel has no working
-# legacy iptables mangle/CHECKSUM). Run as root:
-#   sudo bash /home/nick/feh-waydroid/04-fix-net.sh
+# legacy iptables mangle/CHECKSUM). Re-run after a waydroid package upgrade (it reverts the patch).
+#   sudo setup/03-fix-net.sh
 set -euxo pipefail
-exec > >(tee -a /home/nick/feh-waydroid/fixnet.log) 2>&1
+ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+mkdir -p "$ROOT/logs"; [[ -n ${SUDO_USER:-} ]] && chown "$SUDO_USER:" "$ROOT/logs"   # bin/session logs there too
+exec > >(tee -a "$ROOT/logs/fixnet.log") 2>&1
 SCRIPT=/usr/lib/waydroid/data/scripts/waydroid-net.sh
 
 cp -n "$SCRIPT" "${SCRIPT}.orig"          # one-time backup

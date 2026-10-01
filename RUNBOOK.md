@@ -1,57 +1,38 @@
 # Waydroid runbook — FEH from a fresh box to a dump
 
 Everything needed to get Fire Emblem Heroes 10.9.0 running in Waydroid on a **new** Linux box and dump its
-data. Waydroid works where true emulators don't (see [Why emulators fail](../README.md#why-emulators-fail)):
+data. Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
 This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K / UHD 630). It is fiddly; each
-prerequisite below is here because skipping it broke something. The `*.sh` scripts in this folder automate the
-mechanical parts — read [`README.md`](README.md) for what each does.
+prerequisite below is here because skipping it broke something. The `setup/` and `bin/` scripts automate the
+mechanical parts; see [Scripts](README.md#scripts) for what each does. Run everything from the repo root.
 
 > **Assumptions.** Linux x86_64; an Intel CPU (→ **libhoudini**; on AMD use `libndk` instead); a GPU with real
-> DRM/GL (we used the Intel iGPU — needed for the stable physical-display step); a spare **monitor + USB
-> keyboard/mouse** for the box; ~25 GB free. The scripts hardcode user `nick` and `/home/nick/...` paths and
-> the Intel GPU — adjust them for your box/user.
+> DRM/GL (we used the Intel iGPU — needed for the stable `bin/display` step); a spare **monitor + USB
+> keyboard/mouse** for the box; ~25 GB free.
 
 ---
 
-## 0. Prerequisites the scripts do NOT set up — do these first
-
-**a. Binder devices.** Waydroid needs `/dev/binder`, `/dev/hwbinder`, `/dev/vndbinder`. Debian's kernel has
-no binderfs, so create them from the `binder_linux` module. (On our box the ReDroid `host/setup.sh` had
-already done this.) On a bare box:
+## 0. Host prerequisites
 
 ```sh
-echo 'options binder_linux devices=binder,hwbinder,vndbinder' | sudo tee /etc/modprobe.d/waydroid.conf
-echo binder_linux | sudo tee /etc/modules-load.d/binder.conf
-sudo modprobe -r binder_linux 2>/dev/null; sudo modprobe binder_linux
-# make them world-usable (Android's services open them):
-printf 'KERNEL=="binder", MODE="0666"\nKERNEL=="hwbinder", MODE="0666"\nKERNEL=="vndbinder", MODE="0666"\n' \
-  | sudo tee /etc/udev/rules.d/99-binder.rules
-sudo udevadm control --reload && sudo udevadm trigger
-ls -l /dev/binder /dev/hwbinder /dev/vndbinder   # all three must exist
+sudo setup/00-host-prereqs.sh
 ```
 
-**b. Extra kernel modules** (loading `nft_masq` fixes Android NAT, `loop` lets `system.img` mount):
+This does three things, and each one persists across reboots:
 
-```sh
-printf 'loop\nnf_nat\nnft_nat\nnft_masq\nnft_chain_nat\n' | sudo tee /etc/modules-load.d/waydroid-feh.conf
-sudo modprobe loop nf_nat nft_nat nft_masq nft_chain_nat
-```
+**a. Binder devices.** Waydroid needs `/dev/binder`, `/dev/hwbinder` and `/dev/vndbinder`. Debian's kernel has
+no binderfs, so the script creates them from the `binder_linux` module (`/etc/modprobe.d/waydroid-binder.conf`,
+`/etc/modules-load.d/waydroid-binder.conf`) and a udev rule makes them `0666`, because Android's services open
+them as non-root.
 
-**c. Host firewall** — open the `waydroid0` bridge, or the container gets no DHCP lease and no internet
-(UFW/Docker set the FORWARD policy to drop). Quick runtime rules:
+**b. Extra kernel modules.** `nft_masq` (and its NAT deps) fixes Android's NAT, and `loop` lets `system.img`
+mount. They are listed in `/etc/modules-load.d/waydroid-feh.conf`.
 
-```sh
-sudo nft insert rule ip filter INPUT   iifname "waydroid0" accept
-sudo nft insert rule ip filter FORWARD iifname "waydroid0" accept
-sudo nft insert rule ip filter FORWARD oifname "waydroid0" accept
-```
-
-**These `nft insert` rules do NOT survive a reboot** — UFW/Docker rebuild the ruleset at boot and drop them.
-Either re-run them after each reboot (before starting a session) or make them persistent with UFW, which
-reloads them on boot:
+**c. Host firewall.** It opens the `waydroid0` bridge. Without that the container gets no DHCP lease and no
+internet, because UFW/Docker set the FORWARD policy to drop. With UFW active, the script adds persistent rules:
 
 ```sh
 sudo ufw allow in on waydroid0                 # INPUT: DHCP/DNS from the container to the host
@@ -59,23 +40,25 @@ sudo ufw route allow in on waydroid0           # FORWARD: container -> internet
 sudo ufw route allow out on waydroid0          # FORWARD: replies back to the container
 ```
 
-See [Surviving a reboot](#surviving-a-reboot) for the full list of what persists and what to re-apply.
-
-**d. PulseAudio** running for the user — the container bind-mounts the pulse socket and won't start without it,
-even headless:
+Without UFW it prints these runtime rules instead. They **do not survive a reboot**, so re-run them before
+each session:
 
 ```sh
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
-pulseaudio --start --exit-idle-time=-1
-ls -l "$XDG_RUNTIME_DIR/pulse/native"   # socket must exist
+sudo nft insert rule ip filter INPUT   iifname "waydroid0" accept
+sudo nft insert rule ip filter FORWARD iifname "waydroid0" accept
+sudo nft insert rule ip filter FORWARD oifname "waydroid0" accept
 ```
+
+**PulseAudio** must also be running for your user, because the container bind-mounts the pulse socket and won't
+start without it, even headless. The script installs it, and `bin/session` / `bin/display` start it when it isn't
+running.
 
 ---
 
 ## 1. Install Waydroid + ARM translation
 
 ```sh
-sudo bash 01-install-waydroid.sh
+sudo setup/01-install-waydroid.sh
 ```
 
 Adds the repo.waydro.id apt repo (falls back to the `bookworm` suite if `trixie` isn't published), installs
@@ -85,11 +68,11 @@ via [waydroid_script](https://github.com/casualsnek/waydroid_script). Ends with 
 ## 2. Networking
 
 ```sh
-sudo bash 03-netdeps.sh     # installs iptables + dnsmasq-base (Debian's waydroid pkg omits them)
-sudo bash 04-fix-net.sh     # switch waydroid-net.sh to the nftables backend + two nft-syntax fixes
+sudo setup/02-netdeps.sh    # installs iptables + dnsmasq-base (Debian's waydroid pkg omits them)
+sudo setup/03-fix-net.sh    # switch waydroid-net.sh to the nftables backend + two nft-syntax fixes
 ```
 
-Why `04`: on trixie the legacy iptables backend has no working `mangle` table / `CHECKSUM` target, so
+Why `03-fix-net.sh`: on trixie the legacy iptables backend has no working `mangle` table / `CHECKSUM` target, so
 `waydroid-net.sh start` aborts. The script flips `LXC_USE_NFT="true"`, removes a stray leading `;` in the nft
 ruleset (a Waydroid bug when IPv6 NAT is off), and feeds nft via `nft -f -` instead of one big argument. It
 then brings the bridge up; you should see `waydroid0` with `inet 192.168.240.1` and an `lxc` nft table.
@@ -97,15 +80,11 @@ then brings the bridge up; you should see `waydroid0` with `inet 192.168.240.1` 
 ## 3. Boot a session and confirm it works
 
 ```sh
-sudo bash restart-session.sh   # or, for the headless smoke-test with prop output: bash 02-session.sh
+bin/session --props
 ```
 
-Confirm arm64 translation and the non-emulator fingerprint (the two things that make FEH run):
-
-```sh
-sudo waydroid shell -- getprop ro.product.cpu.abilist   # must include arm64-v8a
-sudo waydroid shell -- getprop ro.product.name          # lineage_waydroid_x86_64  (no "sdk")
-```
+It boots a headless session and prints the two things that make FEH run: `ro.product.cpu.abilist` must include
+`arm64-v8a`, and `ro.product.name` must be `lineage_waydroid_x86_64` (no `"sdk"`).
 
 ## 4. Google Play (FEH requires Google Play services)
 
@@ -113,8 +92,8 @@ VANILLA has no GMS, so FEH shows *"won't run without Google Play services."* Ins
 
 ```sh
 sudo /opt/waydroid_script/venv/bin/python3 /opt/waydroid_script/main.py install gapps   # MindTheGapps on A13
-sudo bash restart-session.sh
-DEVICE=192.168.240.112:5555 bin/gsf-id        # prints the GSF Android id (adb-connect first if needed)
+bin/session
+bin/gsf-id        # prints the GSF Android id (adb at 192.168.240.112:5555; DEVICE=... to override)
 ```
 
 Register that id at <https://www.google.com/android/uncertified> with the Google account you'll use, **wait
@@ -133,7 +112,7 @@ animated home screen. The reliable fix is hardware GL on a real screen:
 3. Run **at that console** (not over SSH — DRM needs the seat):
 
    ```sh
-   bash physical-display.sh
+   bin/display
    ```
 
    It stops the headless weston and starts `weston --backend=drm-backend.so` on the Intel GPU, then the
@@ -150,10 +129,10 @@ hangs), or use the repo's adb-based dumper:
 # direct (host path, root):
 sudo rsync -a ~/.local/share/waydroid/data/data/com.nintendo.zaba/  <dest>/
 # or via adb, with a manifest:
-DEVICE=192.168.240.112:5555 bin/dump
+bin/dump
 ```
 
-For the multi-language dump and verification method, see [The dump](../README.md#the-dump-three-languages) in
+For the multi-language dump and verification method, see [The dump](README.md#the-dump-three-languages) in
 the top-level README.
 
 ---
@@ -162,28 +141,26 @@ the top-level README.
 
 **Persists automatically** (nothing to do): the FEH data on disk
 (`~/.local/share/waydroid/data/data/com.nintendo.zaba`); the binder devices (udev/module config from §0a);
-the extra kernel modules (`/etc/modules-load.d/waydroid-feh.conf`, §0b); the `waydroid-net.sh` nftables patch
-(a file edit, §2 — but a `waydroid` package update will revert it, so re-run `04-fix-net.sh` after upgrades);
+the extra kernel modules (`/etc/modules-load.d/waydroid-feh.conf`, §0b); the UFW rules for `waydroid0` (§0c); the `waydroid-net.sh` nftables patch
+(a file edit, §2 — but a `waydroid` package update will revert it, so re-run `setup/03-fix-net.sh` after upgrades);
 and the `waydroid-container` service (`systemctl enable`d).
 
 **Does NOT persist — re-apply after each reboot before starting a session:**
 
-1. **The `waydroid0` firewall rules** (§0c) — the runtime `nft insert` rules are gone after boot; without them
-   the container gets no DHCP/internet. Re-run the three `nft insert` commands, or persist them once with the
-   `ufw ...` commands in §0c.
-2. **PulseAudio** for the user (§0d) — `pulseaudio --start --exit-idle-time=-1`.
-3. **The weston compositor + Waydroid session** — not a boot service: run `physical-display.sh` at the console
-   (or `restart-session.sh` for a headless session). The container service starts on boot, but the *session*
-   (the user side that renders + connects) is started by hand.
+1. **The weston compositor + Waydroid session.** These are not a boot service. Run `bin/display` at the
+   console, or `bin/session` for a headless session; both also start PulseAudio. The container service starts on
+   boot, but the *session* (the user side that renders and connects) is started by hand.
+2. **Only without UFW:** the runtime `nft insert` firewall rules (§0c) are gone after boot. Re-run them first,
+   or the container gets no DHCP/internet.
 
-So a clean "after reboot, play/dump again" sequence is: firewall rules → PulseAudio → `physical-display.sh`.
+So a clean "after reboot, play/dump again" is just `bin/display` at the console.
 
 ---
 
 ## Quirks & troubleshooting (everything that bit us)
 
 - **adbd over TCP freezes** (device shows `offline`, `waydroid shell`/scrcpy hang). Only a full
-  `waydroid session stop && waydroid session start` (i.e. `restart-session.sh`) restores it — a
+  `waydroid session stop && waydroid session start` (i.e. `bin/session`) restores it — a
   `waydroid container restart` does **not**. The container itself usually keeps running; `sudo waydroid shell`
   (lxc-attach) and host-filesystem reads keep working through the freeze, so prefer them for anything scripted.
 - **`waydroid shell` needs root**, and eats flags: use `sudo waydroid shell -- <cmd -flags>` (the `--` passes
@@ -195,7 +172,8 @@ So a clean "after reboot, play/dump again" sequence is: firewall rules → Pulse
 - **Obfuscated-name files** (`SnZ77WFq`, `V9GiILGz`, `*~` in `files/assets/`) are FEH's mutable per-state asset
   catalog/index; they differ between language states — not corruption.
 - **Networking must persist:** every container start re-runs `waydroid-net.sh`, so the `nft_masq`/`loop`
-  modules and the `waydroid0` firewall rules must survive reboots or the session fails to boot again.
+  modules and the `waydroid0` firewall rules must survive reboots or the session fails to boot again
+  (`setup/00-host-prereqs.sh` persists both when UFW is active).
 - **Interactive viewing:** scrcpy over an SSH tunnel to Waydroid's adb
-  (`ssh -L 5999:192.168.240.112:5555 …` then `scrcpy -s localhost:5999`) works but rides on the flaky adbd —
+  (`bin/screen` prints the recipe) works but rides on the flaky adbd —
   use the physical display for anything interactive (menus, sign-in, language switching).

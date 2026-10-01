@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Copy Fire Emblem Heroes' installed APKs and downloaded data off the device into
 # dumps/<date>-v<version>/, with manifest.json (every file's size and sha256).
-#   bin/dump                        the ReDroid container (adb root: everything)
+#   bin/dump                        Waydroid (adb root: everything)
 #   DEVICE=<serial> bin/dump        a phone over USB (no root: shared storage + APKs only)
+# On Waydroid you can skip adb: the data is on the host, see RUNBOOK.md §6.
 source "$(dirname "$0")/_lib.sh"
 connect
 root=no
