@@ -1,7 +1,7 @@
 # Waydroid runbook — FEH from a fresh box to a dump
 
-Everything needed to get Fire Emblem Heroes 10.9.0 running in Waydroid on a **new** Linux box and dump its
-data. Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
+Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Linux box and dump its data
+(done for 10.9.0 and 10.10.0), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
@@ -117,6 +117,12 @@ animated home screen. The reliable fix is hardware GL on a real screen:
 
    It stops the headless weston and starts `weston --backend=drm-backend.so` on the Intel GPU, then the
    Waydroid session + FEH.
+
+   **No keyboard on the box?** If tty1 is still logged in (a mouse alone is enough to play), run
+   `bin/console` **over SSH** instead. It types `bin/display` into the console's own shell (TIOCSTI, via
+   sudo), so it runs in the seat0 session exactly as if you'd typed it there. The output also goes to
+   `logs/display.log`. It refuses if no monitor is connected or tty1 isn't at a prompt. After a reboot tty1
+   is logged out, so this needs a keyboard once to log in.
 4. Install FEH from Play, **play as a guest** (don't link a Nintendo Account), finish the **tutorial** (the
    first battle + summon — required before the game will download its full asset set), and let it download.
 
@@ -134,6 +140,67 @@ bin/dump
 
 For the multi-language dump and verification method, see [The dump](README.md#the-dump-three-languages) in
 the top-level README.
+
+## 7. A new FEH release: update and re-dump
+
+This is the routine used for 10.10.0 (2026-10-06), run entirely over SSH from the Mac with the drive attached
+there. Each release gets its own **new** dump folder, `feh-<version>-<date>/`, because existing dumps are
+read-only.
+
+**a. Screen up.** Plug in the monitor and mouse, then run `bin/display` at the console, or `bin/console` over
+SSH (§5).
+
+**b. Update the APK (if there's a new one).** Waydroid's Play Store may not offer the update (it didn't for
+10.10.0). If not, download the **arm64-v8a** APK (the installed build is arm64; check `primaryCpuAbi` in
+`dumpsys package com.nintendo.zaba`) and install it as an in-place update, which keeps the game data:
+
+```sh
+# on the Mac: the signing cert must match the installed one, or Android refuses the update
+unzip -p new.apk META-INF/NINTENDO.RSA | openssl pkcs7 -inform DER -print_certs | openssl x509 -noout -fingerprint -sha256
+#   Nintendo's: 1B:C2:C2:5D:00:8B:FD:03:02:3C:1B:A6:01:40:DF:D2:C1:7F:85:0A:4A:D5:25:03:88:E2:CF:29:2E:02:16:7D
+# on the box: install via pm inside the container (no adbd involved)
+sudo cp new.apk ~/.local/share/waydroid/data/local/tmp/feh.apk
+sudo waydroid shell -- pm install -r /data/local/tmp/feh.apk && sudo rm ~/.local/share/waydroid/data/local/tmp/feh.apk
+```
+
+Then launch FEH (`sudo waydroid shell -- am start -n com.nintendo.zaba/org.cocos2dx.cpp.AppActivity`) and let
+it download in its current language.
+
+**c. Capture each language state.** For each state (US → EU → JP), after its download finishes:
+
+```sh
+LIVE=~/.local/share/waydroid/data/data/com.nintendo.zaba
+STAGE=~/feh-dumper/dumps/feh-<version>-<date>            # staging on the box's internal disk
+sudo waydroid shell -- am force-stop com.nintendo.zaba   # no half-written files
+mkdir -p $STAGE/data/com.nintendo.zaba $STAGE/apk $STAGE/state-index/$S
+sudo rsync -a --out-format=%n $LIVE/ $STAGE/data/com.nintendo.zaba/ > $STAGE/changes-$S.list   # NO --delete
+sudo find $LIVE/files/assets -maxdepth 1 -type f -exec cp -p {} $STAGE/state-index/$S/ \;      # per-state index
+sudo chown -R $USER: $STAGE
+cd $LIVE/.. && sudo find com.nintendo.zaba -type f -print0 | sudo xargs -0 -P12 -n200 sha256sum | sort -k2 > $STAGE/$S-full.sha256
+```
+
+The first round also copies `~/.local/share/waydroid/data/app/*/com.nintendo.zaba*/base.apk` to
+`$STAGE/apk/feh-<version>.apk`. Once staging is done you can switch the in-game language. The drive copy
+comes from `$STAGE`, so it doesn't matter that the game deletes the old language's files.
+
+**d. Copy to the drive with tar over ssh** (run on the Mac, not `rsync`, see Quirks). The first round copies
+the whole staging folder. Later rounds copy only that round's changed files:
+
+```sh
+ssh box 'tar -C ~/feh-dumper/dumps -cf - feh-<version>-<date>' | tar -C <drive>/dumps -xf -        # round 1
+ssh box "cd $STAGE && { grep -v '/\$' changes-$S.list | sed 's|^|data/com.nintendo.zaba/|'; \
+  printf '%s\n' $S-full.sha256 changes-$S.list state-index/$S; } | tar -cf - -T -" | tar -C <dest> -xf -
+cd <dest>/data && shasum -a 256 -c ../$S-full.sha256 > ../verify-$S.out      # expect 0 failures, every round
+```
+
+**e. Finish.** On the box, build `MASTER-sha256sums.txt` (sha256 of every file under `$STAGE/data`). Copy it to
+the drive, `shasum -c` it there, and check that the drive's file count (excluding `.DS_Store`) equals its
+line count. Write `INFO.txt` in the same format as the previous dump, then `chmod -R a+rX,a-w` the dump
+folder. Confirm the box's MASTER and the drive's MASTER have the same hash, then `rm -rf $STAGE`.
+
+**f. Back to headless.** `waydroid session stop; pkill -x weston; bin/session`. Use `pkill -x`, not
+`pkill -f weston...`: over SSH, `-f` also matches (and kills) your own remote shell, whose command line
+contains the pattern.
 
 ---
 
@@ -165,8 +232,10 @@ So a clean "after reboot, play/dump again" is just `bin/display` at the console.
   (lxc-attach) and host-filesystem reads keep working through the freeze, so prefer them for anything scripted.
 - **`waydroid shell` needs root**, and eats flags: use `sudo waydroid shell -- <cmd -flags>` (the `--` passes
   `-p`, `-b`, etc. through to the Android command).
-- **Whole-tree `rsync` stalls** on the ~85k-file scan over a USB drive. Rsync the *specific* changed directory
-  (e.g. `files/assets/EUEN`), then **hash-verify the whole state** to catch anything missed.
+- **Whole-tree `rsync` stalls** on the ~85k-file scan over a USB drive. The Mac's `/usr/bin/rsync` is
+  **openrsync** (protocol 29), which is the likely culprit. Stream with **tar over ssh** instead (§7d), copying
+  only each round's changed files, then **hash-verify the whole state** to catch anything missed. Over the
+  Mac's Wi-Fi that runs at about 14 MB/s (8 GB in about 10 min).
 - **Silent drive corruption** happens on flaky external drives — our per-round `shasum -c` caught a damaged
   `VOICE_*.ckb` that we re-copied. Always keep the manifests and re-verify.
 - **Obfuscated-name files** (`SnZ77WFq`, `V9GiILGz`, `*~` in `files/assets/`) are FEH's mutable per-state asset
@@ -174,6 +243,9 @@ So a clean "after reboot, play/dump again" is just `bin/display` at the console.
 - **Networking must persist:** every container start re-runs `waydroid-net.sh`, so the `nft_masq`/`loop`
   modules and the `waydroid0` firewall rules must survive reboots or the session fails to boot again
   (`setup/00-host-prereqs.sh` persists both when UFW is active).
+- **A one-off FEH crash after relaunch** (SIGSEGV on `GLThread`, in `libcocos2dcpp.so` at a `bl CkUpdate`,
+  Cricket Audio's per-frame update) is **not** the emulator self-destruct. The log still says
+  `isEmulator=false`; just relaunch. The self-destruct logs `isEmulator=true` first (README, Why emulators fail).
 - **Interactive viewing:** scrcpy over an SSH tunnel to Waydroid's adb
   (`bin/screen` prints the recipe) works but rides on the flaky adbd —
   use the physical display for anything interactive (menus, sign-in, language switching).

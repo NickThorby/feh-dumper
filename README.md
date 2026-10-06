@@ -5,9 +5,10 @@ Dump Fire Emblem Heroes' game data yourself, without a rooted phone: run the gam
 straight off the host. The dumps feed the `fire-emblem-legends-data` catalogue (a separate repo); decoding the
 game's raw formats is not done here.
 
-> **Status (2026-09-30):** Fire Emblem Heroes 10.9.0 runs in Waydroid, and a complete data dump (Japanese +
-> English voices, plus US/EU/Japanese text) has been captured and hash-verified. True emulators don't work:
-> see [Why emulators fail](#why-emulators-fail).
+> **Status (2026-10-06):** Fire Emblem Heroes runs in Waydroid. Complete, hash-verified data dumps (Japanese +
+> English voices, plus US/EU/Japanese text) exist for **10.9.0** (2026-09-30) and **10.10.0** (2026-10-06,
+> 127,652 files). The update-and-re-dump routine is [RUNBOOK §7](RUNBOOK.md#7-a-new-feh-release-update-and-re-dump).
+> True emulators don't work: see [Why emulators fail](#why-emulators-fail).
 
 ## Quick start
 
@@ -38,6 +39,7 @@ FEH, play as a guest through the tutorial, and let it download. Copy the data fr
 | `setup/03-fix-net.sh` | root | patches `waydroid-net.sh` to nftables (backs up the original); re-run after a `waydroid` upgrade |
 | `bin/session [--props]` | user | (re)start a headless session and wait for boot. This is the fix when adbd freezes. |
 | `bin/display` | user, **at the console** | weston on the DRM backend (hardware GL) + session + FEH: the stable way to play |
+| `bin/console ['<cmd>']` | user, over SSH | types a command (default: `bin/display`) into the logged-in tty1 shell, for a box with no keyboard |
 | `bin/gsf-id` | user | the id Google's uncertified-device form needs |
 | `bin/probe` | user | where the game's data is and whether adb can read it (read-only) |
 | `bin/dump` | user | APKs + game data → `dumps/<date>-v<version>/` + `manifest.json` (sha256 per file) |
