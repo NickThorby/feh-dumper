@@ -143,9 +143,11 @@ the top-level README.
 
 ## 7. A new FEH release: update and re-dump
 
-This is the routine used for 10.10.0 (2026-10-06), run entirely over SSH from the Mac with the drive attached
-there. Each release gets its own **new** dump folder, `feh-<version>-<date>/`, because existing dumps are
-read-only.
+This is the routine used for 10.10.0 (2026-10-06) and its data-only update (2026-10-16), run entirely over SSH
+from the Mac with the drive attached there. Each release gets its own **new** dump folder,
+`feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game download,
+same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
+version number; say in `INFO.txt` that it's a data update.
 
 **a. Screen up.** Plug in the monitor and mouse, then run `bin/display` at the console, or `bin/console` over
 SSH (§5).
@@ -166,12 +168,24 @@ sudo waydroid shell -- pm install -r /data/local/tmp/feh.apk && sudo rm ~/.local
 Then launch FEH (`sudo waydroid shell -- am start -n com.nintendo.zaba/org.cocos2dx.cpp.AppActivity`) and let
 it download in its current language.
 
-**c. Capture each language state.** For each state (US → EU → JP), after its download finishes:
+**c. Capture each language state.** **Start with the language the box was left in** (the last state of the
+previous dump), so the update's first download is just the delta. Check which one it is from the live data:
+
+```sh
+sudo bash -c 'du -sh ~nick/.local/share/waydroid/data/data/com.nintendo.zaba/files/assets/{JPJA,ENCommon,USEN,EUEN}'
+#   JP: JPJA ~2.6G, no ENCommon      US: ENCommon ~2.4G + USEN 26M      EU: ENCommon ~2.4G + EUEN 26M
+```
+
+Every switch between Japanese and English downloads that language's voices again (~2.6 GB JPJA or ~2.4 GB
+ENCommon). US ↔ EU is only ~26 MB of text. So keep the two English states next to each other: from JP go
+**JP → EU → US** (2026-10-16), and from US go **US → EU → JP** (2026-10-06). For each state, after its
+download finishes:
 
 ```sh
 LIVE=~/.local/share/waydroid/data/data/com.nintendo.zaba
 STAGE=~/feh-dumper/dumps/feh-<version>-<date>            # staging on the box's internal disk
-sudo waydroid shell -- am force-stop com.nintendo.zaba   # no half-written files
+sudo waydroid shell -- am force-stop com.nintendo.zaba; sleep 2   # no half-written files
+sudo waydroid shell -- pidof com.nintendo.zaba           # must print nothing; if it does, force-stop again (Quirks)
 mkdir -p $STAGE/data/com.nintendo.zaba $STAGE/apk $STAGE/state-index/$S
 sudo rsync -a --out-format=%n $LIVE/ $STAGE/data/com.nintendo.zaba/ > $STAGE/changes-$S.list   # NO --delete
 sudo find $LIVE/files/assets -maxdepth 1 -type f -exec cp -p {} $STAGE/state-index/$S/ \;      # per-state index
@@ -243,6 +257,11 @@ So a clean "after reboot, play/dump again" is just `bin/display` at the console.
 - **Networking must persist:** every container start re-runs `waydroid-net.sh`, so the `nft_masq`/`loop`
   modules and the `waydroid0` firewall rules must survive reboots or the session fails to boot again
   (`setup/00-host-prereqs.sh` persists both when UFW is active).
+- **FEH comes back right after `am force-stop`.** Android can restart a background FEH process within
+  milliseconds to run the Firebase telemetry job (logcat: `Start proc …:com.nintendo.zaba … for service
+  {…datatransport…JobInfoSchedulerService}`). It isn't the game and only touches the telemetry database. Still,
+  check `pidof` after stopping, force-stop again if needed, and re-run that round's rsync: on 2026-10-16 the
+  re-sync found 0 changed files. Merge its output into `changes-$S.list` with `sort -u`.
 - **A one-off FEH crash after relaunch** (SIGSEGV on `GLThread`, in `libcocos2dcpp.so` at a `bl CkUpdate`,
   Cricket Audio's per-frame update) is **not** the emulator self-destruct. The log still says
   `isEmulator=false`; just relaunch. The self-destruct logs `isEmulator=true` first (README, Why emulators fail).
