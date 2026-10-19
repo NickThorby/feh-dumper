@@ -1,0 +1,29 @@
+# Waydroid/FEH display mode: weston on the physical monitor (hardware GL on the GTX 980 Ti via nouveau), run as
+# nick on tty9. Started/stopped by feh-dumper bin/display over SSH - no keyboard or console login needed.
+[Unit]
+Description=Weston on the monitor for Waydroid/FEH (feh-dumper display mode)
+Documentation=file:///home/nick/feh-dumper/RUNBOOK.md
+After=systemd-user-sessions.service dbus.socket waydroid-container.service
+Wants=dbus.socket
+Conflicts=getty@tty9.service
+ConditionPathExists=/dev/tty0
+
+[Service]
+Type=simple
+User=nick
+Group=nick
+WorkingDirectory=/home/nick
+PAMName=feh-display
+Environment=XDG_SESSION_TYPE=wayland
+TTYPath=/dev/tty9
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+StandardInput=tty-fail
+StandardOutput=journal
+StandardError=journal
+UtmpIdentifier=tty9
+UtmpMode=user
+ExecStartPre=+/usr/bin/chvt 9
+ExecStart=/usr/local/lib/feh-display/weston-feh
+ExecStopPost=+/usr/local/lib/feh-display/vt-back

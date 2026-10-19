@@ -6,6 +6,7 @@
 # For anything interactive, use bin/display at the physical console instead.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
+source "$ROOT/bin/_gpu.sh"
 mkdir -p "$ROOT/logs"
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 export WAYLAND_DISPLAY=wayland-waydroid
@@ -29,6 +30,7 @@ for _ in $(seq 1 48); do
   echo -n "."; sleep 5
 done
 [[ $(prop sys.boot_completed) == 1 ]] || { echo; echo "not booted after 4 min: see logs/session.log" >&2; exit 1; }
+gralloc_ok || exit 1
 
 if [[ ${1:-} == --props ]]; then
   echo "abi:           $(prop ro.product.cpu.abilist)   (must include arm64-v8a)"

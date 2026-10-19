@@ -1,0 +1,10 @@
+#!/bin/sh
+# ExecStart for feh-display.service: weston (kiosk shell: one fullscreen app, no launchers) on the GPU at PCI
+# 03:00.0 (the GTX 980 Ti, nouveau) for Waydroid/FEH. The card is resolved at runtime because DRM card numbers can
+# change between boots (e.g. if the Intel iGPU is ever enabled in the BIOS).
+set -eu
+card=$(basename "$(readlink -f /dev/dri/by-path/pci-0000:03:00.0-card)")
+case $card in card[0-9]*) ;; *) echo "feh-display: no DRM card at pci-0000:03:00.0" >&2; exit 1 ;; esac
+export __EGL_VENDOR_LIBRARY_FILENAMES=/usr/share/glvnd/egl_vendor.d/50_mesa.json
+exec /usr/bin/weston --backend=drm-backend.so --drm-device="$card" --shell=kiosk-shell.so \
+    --socket=wayland-waydroid --idle-time=0 --continue-without-input

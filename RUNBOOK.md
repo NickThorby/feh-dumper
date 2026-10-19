@@ -5,13 +5,17 @@ Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Lin
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
-This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K / UHD 630). It is fiddly; each
+This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K, GTX 980 Ti on nouveau). It is fiddly; each
 prerequisite below is here because skipping it broke something. The `setup/` and `bin/` scripts automate the
 mechanical parts; see [Scripts](README.md#scripts) for what each does. Run everything from the repo root.
 
-> **Assumptions.** Linux x86_64; an Intel CPU (→ **libhoudini**; on AMD use `libndk` instead); a GPU with real
-> DRM/GL (we used the Intel iGPU — needed for the stable `bin/display` step); a spare **monitor + USB
-> keyboard/mouse** for the box; ~25 GB free.
+> **Assumptions.**
+> - Linux x86_64 with an Intel CPU (→ **libhoudini**; on AMD use `libndk` instead).
+> - A GPU with a **Mesa** driver (real DRM/GL), needed for the stable `bin/display` step. We used the GTX 980 Ti on
+>   **nouveau**; the box's Intel iGPU is off in the BIOS, and its motherboard has no video outputs. Waydroid can't
+>   render on NVIDIA's proprietary driver.
+> - A spare **monitor and mouse** for the box. A keyboard is only needed for the first setup.
+> - About 25 GB free.
 
 ---
 
@@ -107,22 +111,19 @@ account" error and stabilises the home screen.
 Headless software rendering **hangs repeatedly** (adbd freezes, the container wedges) once FEH reaches its
 animated home screen. The reliable fix is hardware GL on a real screen:
 
-1. Plug an **HDMI/DP monitor + USB keyboard & mouse** into the box (motherboard/Intel port).
-2. Log in at the **physical console** (getty on tty1 → logind grants the seat + GPU/input access).
-3. Run **at that console** (not over SSH — DRM needs the seat):
+1. Plug an **HDMI/DP monitor and a USB mouse** into the box. The monitor goes on the GPU (the 980 Ti's ports).
+2. Once, install the display service: `sudo setup/04-feh-display.sh`. It installs `feh-display.service`, which
+   runs `weston --backend=drm-backend.so` (kiosk shell) as you on **tty9**, pinned to the GPU by its PCI address.
+   Its PAM session gives weston the seat, i.e. the GPU and input devices. No console login is needed.
+3. Then, **over SSH**:
 
    ```sh
-   bin/display
+   bin/display          # stop headless, start feh-display, boot the session, check the GPU, launch FEH
+   bin/display --stop   # stop it, back to the headless session
    ```
 
-   It stops the headless weston and starts `weston --backend=drm-backend.so` on the Intel GPU, then the
-   Waydroid session + FEH.
-
-   **No keyboard on the box?** If tty1 is still logged in (a mouse alone is enough to play), run
-   `bin/console` **over SSH** instead. It types `bin/display` into the console's own shell (TIOCSTI, via
-   sudo), so it runs in the seat0 session exactly as if you'd typed it there. The output also goes to
-   `logs/display.log`. It refuses if no monitor is connected or tty1 isn't at a prompt. After a reboot tty1
-   is logged out, so this needs a keyboard once to log in.
+   `bin/display` refuses if no monitor is connected to the GPU. It also stops if Android's gralloc isn't on that
+   GPU's render node (`bin/_gpu.sh`; `bin/session` checks the same).
 4. Install FEH from Play, **play as a guest** (don't link a Nintendo Account), finish the **tutorial** (the
    first battle + summon — required before the game will download its full asset set), and let it download.
 
@@ -149,8 +150,7 @@ from the Mac with the drive attached there. Each release gets its own **new** du
 same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
 version number; say in `INFO.txt` that it's a data update.
 
-**a. Screen up.** Plug in the monitor and mouse, then run `bin/display` at the console, or `bin/console` over
-SSH (§5).
+**a. Screen up.** Plug in the monitor and mouse, then run `bin/display` over SSH (§5).
 
 **b. Update the APK (if there's a new one).** Waydroid's Play Store may not offer the update (it didn't for
 10.10.0). If not, download the **arm64-v8a** APK (the installed build is arm64; check `primaryCpuAbi` in
@@ -212,9 +212,9 @@ the drive, `shasum -c` it there, and check that the drive's file count (excludin
 line count. Write `INFO.txt` in the same format as the previous dump, then `chmod -R a+rX,a-w` the dump
 folder. Confirm the box's MASTER and the drive's MASTER have the same hash, then `rm -rf $STAGE`.
 
-**f. Back to headless.** `waydroid session stop; pkill -x weston; bin/session`. Use `pkill -x`, not
-`pkill -f weston...`: over SSH, `-f` also matches (and kills) your own remote shell, whose command line
-contains the pattern.
+**f. Back to headless.** `bin/display --stop`. It stops the session, stops `feh-display`, and runs `bin/session`.
+If you ever kill weston by hand, use `pkill -x weston`, not `pkill -f weston...`. Over SSH, `-f` also matches your
+own remote shell (its command line contains the pattern) and kills it.
 
 ---
 
@@ -222,19 +222,21 @@ contains the pattern.
 
 **Persists automatically** (nothing to do): the FEH data on disk
 (`~/.local/share/waydroid/data/data/com.nintendo.zaba`); the binder devices (udev/module config from §0a);
-the extra kernel modules (`/etc/modules-load.d/waydroid-feh.conf`, §0b); the UFW rules for `waydroid0` (§0c); the `waydroid-net.sh` nftables patch
-(a file edit, §2 — but a `waydroid` package update will revert it, so re-run `setup/03-fix-net.sh` after upgrades);
-and the `waydroid-container` service (`systemctl enable`d).
+the extra kernel modules (`/etc/modules-load.d/waydroid-feh.conf`, §0b); the UFW rules for `waydroid0` (§0c,
+check with `sudo ufw status | grep waydroid`); the `waydroid-net.sh` nftables patch (a file edit, §2, which
+`/usr/local/sbin/waydroid-net-patch` re-applies from an apt hook after every package operation, so a
+`waydroid` upgrade can't silently revert it); `feh-display.service` (§5); and the `waydroid-container` service
+(`systemctl enable`d).
 
 **Does NOT persist — re-apply after each reboot before starting a session:**
 
-1. **The weston compositor + Waydroid session.** These are not a boot service. Run `bin/display` at the
-   console, or `bin/session` for a headless session; both also start PulseAudio. The container service starts on
-   boot, but the *session* (the user side that renders and connects) is started by hand.
+1. **The Waydroid session.** It isn't a boot service. Run `bin/session` for headless or `bin/display` for the
+   monitor, both over SSH; both also start PulseAudio if needed. The container service starts on boot, but the
+   *session* (the user side that renders and connects) is started by hand.
 2. **Only without UFW:** the runtime `nft insert` firewall rules (§0c) are gone after boot. Re-run them first,
    or the container gets no DHCP/internet.
 
-So a clean "after reboot, play/dump again" is just `bin/display` at the console.
+So a clean "after reboot, play/dump again" is just `bin/display` over SSH. No keyboard needed.
 
 ---
 
@@ -262,6 +264,13 @@ So a clean "after reboot, play/dump again" is just `bin/display` at the console.
   {…datatransport…JobInfoSchedulerService}`). It isn't the game and only touches the telemetry database. Still,
   check `pidof` after stopping, force-stop again if needed, and re-run that round's rsync: on 2026-10-16 the
   re-sync found 0 changed files. Merge its output into `changes-$S.list` with `sort -u`.
+- **Which GPU renders?** Check, don't assume. On this box it's the GTX 980 Ti on **nouveau** (`lspci -k`:
+  `Kernel driver in use: nouveau`; weston logs `GL renderer: NV120`). The i7-8700K's iGPU is off in the BIOS, and the
+  motherboard has no outputs for it.
+  - **Never install NVIDIA's proprietary driver.** It replaces nouveau, and Waydroid can't render on it: it falls
+    back to software rendering, which hangs.
+  - **If the GPU ever changes**, update `GPU=` in `bin/_gpu.sh` and in `setup/feh-display/weston-feh`. Then check
+    Android's `gralloc.gbm.device`, which is set when Waydroid is initialised, in `/var/lib/waydroid/waydroid_base.prop`.
 - **A one-off FEH crash after relaunch** (SIGSEGV on `GLThread`, in `libcocos2dcpp.so` at a `bl CkUpdate`,
   Cricket Audio's per-frame update) is **not** the emulator self-destruct. The log still says
   `isEmulator=false`; just relaunch. The self-destruct logs `isEmulator=true` first (README, Why emulators fail).

@@ -12,7 +12,8 @@ game's raw formats is not done here.
 
 ## Quick start
 
-Tested on Debian 13 (kernel 6.12), Intel i7-8700K (UHD 630 iGPU), with a spare monitor and USB keyboard/mouse.
+Tested on Debian 13 (kernel 6.12), an Intel i7-8700K and a GTX 980 Ti on the open-source **nouveau** driver
+(Waydroid needs a Mesa driver), with a spare monitor and USB mouse.
 **[`RUNBOOK.md`](RUNBOOK.md) is the full fresh-box procedure** with every prerequisite and quirk. This is the
 short version:
 
@@ -21,11 +22,12 @@ sudo setup/00-host-prereqs.sh     # binder devices, kernel modules, firewall for
 sudo setup/01-install-waydroid.sh # Waydroid (VANILLA) + weston + libhoudini (arm64 translation)
 sudo setup/02-netdeps.sh          # iptables + dnsmasq (Debian's waydroid package omits them)
 sudo setup/03-fix-net.sh          # waydroid-net.sh -> nftables backend (legacy iptables is broken on trixie)
+sudo setup/04-feh-display.sh      # feh-display.service: weston on the monitor, started by bin/display over SSH
 bin/session --props               # boot headless; abilist must include arm64-v8a, product has no "sdk"
 ```
 
 Then install GApps, register the device at <https://www.google.com/android/uncertified> (`bin/gsf-id`), and sign
-in to Play. FEH hard-requires Play services. Then, **at the physical console**, run `bin/display`, install
+in to Play. FEH hard-requires Play services. Then plug in the monitor and run `bin/display` (over SSH is fine), install
 FEH, play as a guest through the tutorial, and let it download. Copy the data from
 `~/.local/share/waydroid/data/data/com.nintendo.zaba` on the host, or use `bin/dump` over adb.
 
@@ -36,10 +38,11 @@ FEH, play as a guest through the tutorial, and let it download. Copy the data fr
 | `setup/00-host-prereqs.sh` | root | packages; binder devices (module + udev 0666); `loop`/`nft_masq` modules; UFW rules for `waydroid0`. Persists. |
 | `setup/01-install-waydroid.sh` | root | repo.waydro.id apt repo + `waydroid`, `weston`; `waydroid init -s VANILLA`; libhoudini via [waydroid_script](https://github.com/casualsnek/waydroid_script) |
 | `setup/02-netdeps.sh` | root | `iptables` + `dnsmasq-base` |
-| `setup/03-fix-net.sh` | root | patches `waydroid-net.sh` to nftables (backs up the original); re-run after a `waydroid` upgrade |
-| `bin/session [--props]` | user | (re)start a headless session and wait for boot. This is the fix when adbd freezes. |
-| `bin/display` | user, **at the console** | weston on the DRM backend (hardware GL) + session + FEH: the stable way to play |
-| `bin/console ['<cmd>']` | user, over SSH | types a command (default: `bin/display`) into the logged-in tty1 shell, for a box with no keyboard |
+| `setup/03-fix-net.sh` | root | patches `waydroid-net.sh` to nftables (backs up the original) and installs `setup/waydroid-net-patch` with an apt hook that re-applies it after `waydroid` upgrades |
+| `setup/04-feh-display.sh` | root (via sudo) | installs `feh-display.service` (`setup/feh-display/`): weston on the monitor as you on tty9, pinned to the GPU by PCI address |
+| `bin/session [--props]` | user | (re)start a headless session, wait for boot, check the GPU. This is the fix when adbd freezes. |
+| `bin/display [--stop]` | user, over SSH | monitor mode: `feh-display` + session + FEH, the stable way to play; `--stop` returns to headless |
+| `bin/console ['<cmd>']` | user, over SSH | *legacy fallback, superseded by `feh-display`:* types a command into a logged-in tty1 shell |
 | `bin/gsf-id` | user | the id Google's uncertified-device form needs |
 | `bin/probe` | user | where the game's data is and whether adb can read it (read-only) |
 | `bin/dump` | user | APKs + game data → `dumps/<date>-v<version>/` + `manifest.json` (sha256 per file) |

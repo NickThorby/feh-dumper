@@ -1,0 +1,10 @@
+#!/bin/sh
+# ExecStopPost for feh-display.service: hand the screen back to a graphical desktop session if one is running
+# (e.g. the game user's Plasma), otherwise to tty1.
+vt=
+for id in $(loginctl list-sessions --no-legend | awk '{print $1}'); do
+    [ "$(loginctl show-session "$id" -p Service --value)" = feh-display ] && continue
+    case $(loginctl show-session "$id" -p Type --value) in x11|wayland) ;; *) continue ;; esac
+    vt=$(loginctl show-session "$id" -p VTNr --value); [ -n "$vt" ] && [ "$vt" != 0 ] && break
+done
+exec /usr/bin/chvt "${vt:-1}"

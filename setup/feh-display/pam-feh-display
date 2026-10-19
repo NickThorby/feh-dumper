@@ -1,0 +1,7 @@
+# PAM stack for feh-display.service (weston as nick on tty9, for Waydroid/FEH display mode). systemd runs only the
+# account + session phases for PAMName= services; the session stack registers a logind session on seat0 vt9, which
+# is what gives weston DRM-master and input-device access. See feh-dumper RUNBOOK §5.
+auth      substack  login
+account   include   login
+password  substack  login
+session   include   login

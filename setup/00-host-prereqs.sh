@@ -39,15 +39,15 @@ printf '%s\n' "${mods[@]}" > /etc/modules-load.d/waydroid-feh.conf
 modprobe -a "${mods[@]}"
 
 echo "== firewall: open the waydroid0 bridge (UFW/Docker default-drop it: no DHCP, no internet)"
+# No "route allow out on waydroid0": UFW already accepts the replies (conntrack), and that rule would also let
+# Docker containers open connections to Waydroid's unauthenticated adbd.
 if command -v ufw >/dev/null && ufw status | grep -q '^Status: active'; then
-  ufw allow in on waydroid0            # INPUT: DHCP/DNS from the container to the host
-  ufw route allow in on waydroid0      # FORWARD: container -> internet
-  ufw route allow out on waydroid0     # FORWARD: replies back to the container
+  ufw allow in on waydroid0 comment "waydroid: DHCP/DNS from the Android container"
+  ufw route allow in on waydroid0 comment "waydroid: Android container -> internet"
 else
   echo "UFW not active: these runtime rules do not survive a reboot; re-run them before each session:"
   echo '  sudo nft insert rule ip filter INPUT   iifname "waydroid0" accept'
   echo '  sudo nft insert rule ip filter FORWARD iifname "waydroid0" accept'
-  echo '  sudo nft insert rule ip filter FORWARD oifname "waydroid0" accept'
 fi
 
 echo "OK: host ready. Next: sudo setup/01-install-waydroid.sh"

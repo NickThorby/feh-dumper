@@ -1,0 +1,21 @@
+#!/bin/sh
+# Re-apply feh-dumper's waydroid-net.sh patch (nftables backend + two nft-syntax fixes) after a waydroid
+# package upgrade reverts it. Idempotent; silent when already patched; never restarts networking.
+# Installed to /usr/local/sbin by setup/03-fix-net.sh and run from /etc/apt/apt.conf.d/99waydroid-net-patch.
+S=/usr/lib/waydroid/data/scripts/waydroid-net.sh
+[ -f "$S" ] || exit 0
+python3 - "$S" <<'PY'
+import re, sys, subprocess
+p = sys.argv[1]
+s = open(p).read()
+# trixie has no working legacy-iptables mangle/CHECKSUM: use the nftables backend
+s2 = re.sub(r'(?m)^LXC_USE_NFT="false"', 'LXC_USE_NFT="true"', s)
+# Waydroid bug: a stray leading ';' in the nft ruleset when IPv6 NAT is off
+s2 = s2.replace('NFT_RULESET="${NFT_RULESET};', 'NFT_RULESET="${NFT_RULESET}')
+# feed nft on stdin instead of as one big (blank-line-leading) argument
+s2 = s2.replace('nft "${NFT_RULESET}"', 'echo "${NFT_RULESET}" | tee /tmp/waydroid-nft.rules | nft -f -')
+if s2 != s:
+    open(p, "w").write(s2)
+    subprocess.run(["logger", "-t", "waydroid-net-patch", "re-applied nft patch to " + p])
+    print("waydroid-net-patch: re-applied patch to " + p)
+PY
