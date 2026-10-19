@@ -44,6 +44,14 @@ sudo ufw route allow in on waydroid0           # FORWARD: container -> internet
 sudo ufw route allow out on waydroid0          # FORWARD: replies back to the container
 ```
 
+**If Docker runs on the box with a locked-down `DOCKER-USER` chain** (one that ends in a DROP, as the media
+server's does), that chain also sees Waydroid's forwarded traffic. Docker jumps to it from the top of `FORWARD`,
+so the UFW rules above never get a say. It needs `-A DOCKER-USER -i waydroid0 -s 192.168.240.0/24 -j RETURN`
+above its DROP. Here that rule lives in thorby-media's `setup.sh` (its decision D41).
+- **The symptom when it's missing** is FEH's "connection error": inside Android, the gateway and DNS still answer,
+  but nothing past the box does.
+- **Check it** with `sudo iptables -L DOCKER-USER -n` after reboots and Docker upgrades.
+
 Without UFW it prints these runtime rules instead. They **do not survive a reboot**, so re-run them before
 each session:
 
