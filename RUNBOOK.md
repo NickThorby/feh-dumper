@@ -5,15 +5,17 @@ Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Lin
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
-This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K, GTX 980 Ti on nouveau). It is fiddly; each
+This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K, GTX 980 Ti on nouveau, being replaced by
+an Intel Arc A380: see [Changing the GPU](#changing-the-gpu)). It is fiddly; each
 prerequisite below is here because skipping it broke something. The `setup/` and `bin/` scripts automate the
 mechanical parts; see [Scripts](README.md#scripts) for what each does. Run everything from the repo root.
 
 > **Assumptions.**
 > - Linux x86_64 with an Intel CPU (→ **libhoudini**; on AMD use `libndk` instead).
-> - A GPU with a **Mesa** driver (real DRM/GL), needed for the stable `bin/display` step. We used the GTX 980 Ti on
->   **nouveau**; the box's Intel iGPU is off in the BIOS, and its motherboard has no video outputs. Waydroid can't
->   render on NVIDIA's proprietary driver.
+> - A GPU with a **Mesa** driver (real DRM/GL), needed for the stable `bin/display` step. Waydroid can't render on
+>   NVIDIA's proprietary driver.
+>   - On this box that's the GTX 980 Ti on **nouveau**, until the Arc A380 on **i915** replaces it.
+>   - The i7-8700K's iGPU is unusable: the motherboard has no outputs for it and no firmware setting to enable it.
 > - A spare **monitor and mouse** for the box. A keyboard is only needed for the first setup.
 > - About 25 GB free.
 
@@ -119,10 +121,13 @@ account" error and stabilises the home screen.
 Headless software rendering **hangs repeatedly** (adbd freezes, the container wedges) once FEH reaches its
 animated home screen. The reliable fix is hardware GL on a real screen:
 
-1. Plug an **HDMI/DP monitor and a USB mouse** into the box. The monitor goes on the GPU (the 980 Ti's ports).
+1. Plug an **HDMI/DP monitor and a USB mouse** into the box. The monitor goes on the GPU's own ports.
 2. Once, install the display service: `sudo setup/04-feh-display.sh`. It installs `feh-display.service`, which
-   runs `weston --backend=drm-backend.so` (kiosk shell) as you on **tty9**, pinned to the GPU by its PCI address.
-   Its PAM session gives weston the seat, i.e. the GPU and input devices. No console login is needed.
+   runs `weston --backend=drm-backend.so` (kiosk shell) as you on **tty9**.
+   - **Which GPU:** the one Waydroid renders on. `setup/feh-display/feh-gpu` picks it at run time by Waydroid's own
+     rule (see Quirks).
+   - **Access:** its PAM session gives weston the seat, i.e. the GPU and input devices. No console login is needed.
+   - **Log:** weston writes to `/run/user/$UID/weston-feh.log`, including its `GL renderer:` line.
 3. Then, **over SSH**:
 
    ```sh
@@ -130,8 +135,9 @@ animated home screen. The reliable fix is hardware GL on a real screen:
    bin/display --stop   # stop it, back to the headless session
    ```
 
-   `bin/display` refuses if no monitor is connected to the GPU. It also stops if Android's gralloc isn't on that
-   GPU's render node (`bin/_gpu.sh`; `bin/session` checks the same).
+   `bin/display` refuses if no monitor is connected to the GPU. It also stops if Android disagrees about the GPU:
+   gralloc isn't on its render node, or `ro.hardware.vulkan` doesn't match its driver. That check is in
+   `bin/_gpu.sh`, and `bin/session` runs it too.
 4. Install FEH from Play, **play as a guest** (don't link a Nintendo Account), finish the **tutorial** (the
    first battle + summon — required before the game will download its full asset set), and let it download.
 
@@ -248,6 +254,42 @@ So a clean "after reboot, play/dump again" is just `bin/display` over SSH. No ke
 
 ---
 
+## Changing the GPU
+
+Written for the GTX 980 Ti → **Intel Arc A380** swap; the same steps apply to any Mesa-driven card. The GPU is
+picked at run time ([Quirks](#quirks--troubleshooting-everything-that-bit-us)), so nothing in this repo needs
+editing. What changes is Android's view of the GPU, which Waydroid only writes when it regenerates its config.
+
+1. **Before powering off:**
+   - The new card's firmware must be installed. For Arc that's `firmware-intel-graphics` (non-free-firmware; it
+     provides the GuC, HuC and DMC firmware), which the media server's `setup.sh` installs.
+   - Keep a Waydroid restore point: a `tar --numeric-owner --acls --xattrs --xattrs-include='*'` of
+     `/var/lib/waydroid` and `~/.local/share/waydroid`. On this box that's `/srv/backup`, from 2026-10-19.
+2. **Swap the card.** Power off, fit the new card (the A380 needs a PCIe power cable), and move the monitor cable
+   to its ports.
+3. **Check the kernel side:** `lspci -k | grep -A3 -iE 'vga|display'` should show `Kernel driver in use: i915`.
+   Then `ls -l /dev/dri/by-path`. The Arc sits behind its own PCIe switch, so its address isn't the old
+   `03:00.0`, and that doesn't matter here.
+4. **Regenerate Waydroid's config:** `sudo waydroid upgrade --offline`.
+   - It rewrites the LXC config and `waydroid_base.prop` (`gralloc.gbm.device`, `ro.hardware.vulkan` → `intel`),
+     stopping and restarting the container around that.
+   - **Never run it without `--offline`:** that downloads a new LineageOS image, and the current one is the one
+     known to work.
+   - libhoudini's ABI properties live in `waydroid.cfg [properties]`, so they survive.
+5. **`bin/session --props`** should show:
+   - `arm64-v8a` in the ABI list and `libhoudini.so` as the native bridge
+   - `gpu (host): i915, …`
+   - `ro.hardware.vulkan: intel`
+   - no `!!` lines
+6. **`bin/display`:** FEH on the monitor, mouse working, and the game connects.
+   - `grep 'GL renderer' /run/user/$UID/weston-feh.log` names the Intel GPU.
+   - Then `bin/display --stop`.
+7. **Optional: retry headless.** The headless hangs (§5) were only ever seen on nouveau. Run `bin/session`,
+   launch FEH, and watch whether adbd and the container stay up. If they do, monitor mode becomes optional.
+8. Once FEH is verified on the new card, delete the restore point (`sudo rm -rf /srv/backup`).
+
+---
+
 ## Quirks & troubleshooting (everything that bit us)
 
 - **adbd over TCP freezes** (device shows `offline`, `waydroid shell`/scrcpy hang). Only a full
@@ -272,13 +314,18 @@ So a clean "after reboot, play/dump again" is just `bin/display` over SSH. No ke
   {…datatransport…JobInfoSchedulerService}`). It isn't the game and only touches the telemetry database. Still,
   check `pidof` after stopping, force-stop again if needed, and re-run that round's rsync: on 2026-10-16 the
   re-sync found 0 changed files. Merge its output into `changes-$S.list` with `sort -u`.
-- **Which GPU renders?** Check, don't assume. On this box it's the GTX 980 Ti on **nouveau** (`lspci -k`:
-  `Kernel driver in use: nouveau`; weston logs `GL renderer: NV120`). The i7-8700K's iGPU is off in the BIOS, and the
-  motherboard has no outputs for it.
+- **Which GPU renders?** Check, don't assume: `bin/session --props` prints it on both sides. On this box it's the GTX
+  980 Ti on **nouveau** (weston logs `GL renderer: NV120`) until the Arc A380 swap
+  ([Changing the GPU](#changing-the-gpu)).
+  - **How the GPU is picked:** `setup/feh-display/feh-gpu` uses Waydroid's own rule (`tools/helpers/gpu.py`): the
+    first `/dev/dri/renderD*` whose kernel driver isn't `nvidia`. So weston and Android always pick the same card.
+  - **To force one,** set `FEH_GPU=pci-…` (a `/dev/dri/by-path` id) in `/etc/default/feh-dumper`. If it differs from
+    Waydroid's own pick, also set `drm_device` in `/var/lib/waydroid/waydroid.cfg`.
+  - **Android's side is only written when Waydroid regenerates its config** (`gralloc.gbm.device` and
+    `ro.hardware.vulkan` in `/var/lib/waydroid/waydroid_base.prop`). `bin/_gpu.sh` fails loudly when they don't
+    match the host's GPU.
   - **Never install NVIDIA's proprietary driver.** It replaces nouveau, and Waydroid can't render on it: it falls
     back to software rendering, which hangs.
-  - **If the GPU ever changes**, update `GPU=` in `bin/_gpu.sh` and in `setup/feh-display/weston-feh`. Then check
-    Android's `gralloc.gbm.device`, which is set when Waydroid is initialised, in `/var/lib/waydroid/waydroid_base.prop`.
 - **A one-off FEH crash after relaunch** (SIGSEGV on `GLThread`, in `libcocos2dcpp.so` at a `bl CkUpdate`,
   Cricket Audio's per-frame update) is **not** the emulator self-destruct. The log still says
   `isEmulator=false`; just relaunch. The self-destruct logs `isEmulator=true` first (README, Why emulators fail).

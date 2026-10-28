@@ -12,8 +12,9 @@ game's raw formats is not done here.
 
 ## Quick start
 
-Tested on Debian 13 (kernel 6.12), an Intel i7-8700K and a GTX 980 Ti on the open-source **nouveau** driver
-(Waydroid needs a Mesa driver), with a spare monitor and USB mouse.
+Tested on Debian 13 (kernel 6.12) with an Intel i7-8700K, a spare monitor and a USB mouse. The GPU must have a
+**Mesa** driver, because Waydroid can't render on NVIDIA's proprietary one. We use a GTX 980 Ti on nouveau, being
+replaced by an Intel Arc A380 on i915 (RUNBOOK, [Changing the GPU](RUNBOOK.md#changing-the-gpu)).
 **[`RUNBOOK.md`](RUNBOOK.md) is the full fresh-box procedure** with every prerequisite and quirk. This is the
 short version:
 
@@ -39,10 +40,9 @@ FEH, play as a guest through the tutorial, and let it download. Copy the data fr
 | `setup/01-install-waydroid.sh` | root | repo.waydro.id apt repo + `waydroid`, `weston`; `waydroid init -s VANILLA`; libhoudini via [waydroid_script](https://github.com/casualsnek/waydroid_script) |
 | `setup/02-netdeps.sh` | root | `iptables` + `dnsmasq-base` |
 | `setup/03-fix-net.sh` | root | patches `waydroid-net.sh` to nftables (backs up the original) and installs `setup/waydroid-net-patch` with an apt hook that re-applies it after `waydroid` upgrades |
-| `setup/04-feh-display.sh` | root (via sudo) | installs `feh-display.service` (`setup/feh-display/`): weston on the monitor as you on tty9, pinned to the GPU by PCI address |
+| `setup/04-feh-display.sh` | root (via sudo) | installs `feh-display.service` (`setup/feh-display/`): weston on the monitor as you on tty9, on the GPU Waydroid renders on (`feh-gpu`, Waydroid's own rule) |
 | `bin/session [--props]` | user | (re)start a headless session, wait for boot, check the GPU. This is the fix when adbd freezes. |
 | `bin/display [--stop]` | user, over SSH | monitor mode: `feh-display` + session + FEH, the stable way to play; `--stop` returns to headless |
-| `bin/console ['<cmd>']` | user, over SSH | *legacy fallback, superseded by `feh-display`:* types a command into a logged-in tty1 shell |
 | `bin/gsf-id` | user | the id Google's uncertified-device form needs |
 | `bin/probe` | user | where the game's data is and whether adb can read it (read-only) |
 | `bin/dump` | user | APKs + game data → `dumps/<date>-v<version>/` + `manifest.json` (sha256 per file) |

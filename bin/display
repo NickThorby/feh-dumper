@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Put Waydroid + FEH on the physical monitor. Headless rendering hangs once FEH reaches its home screen; this is
-# the stable way to play. weston (DRM backend, hardware GL on the GTX 980 Ti) runs as feh-display.service on tty9,
-# so this works over SSH with no keyboard or console login (RUNBOOK §5).
+# the stable way to play. weston (DRM backend, hardware GL on the GPU Waydroid renders on, see bin/_gpu.sh) runs as
+# feh-display.service on tty9, so this works over SSH with no keyboard or console login (RUNBOOK §5).
 #   bin/display          monitor mode: weston on the screen, Waydroid session, FEH
 #   bin/display --stop   back to the headless session (bin/session)
 set -u
@@ -19,9 +19,9 @@ if [[ ${1:-} == --stop ]]; then
   exec "$ROOT/bin/session"
 fi
 
-card=$(basename "$(readlink -f "/dev/dri/by-path/$GPU-card")")
+card=${GPU_CARD##*/}
 grep -qx connected /sys/class/drm/"$card"-*/status ||
-  { echo "!! no monitor connected to $card ($GPU)" >&2; exit 1; }
+  { echo "!! no monitor connected to $card ($GPU_DRIVER, $GPU_PCI)" >&2; exit 1; }
 echo ">>> stopping the headless session..."
 waydroid session stop 2>/dev/null
 pkill -x weston 2>/dev/null
@@ -30,7 +30,8 @@ echo ">>> starting weston on the monitor (feh-display.service)..."
 sudo systemctl restart feh-display
 for _ in $(seq 1 20); do [[ -S $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY ]] && break; sleep 0.5; done
 if [[ ! -S $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY ]]; then
-  echo "!! weston did not create its socket:" >&2; sudo journalctl -u feh-display -n 15 --no-pager >&2; exit 1
+  echo "!! weston did not create its socket:" >&2; sudo journalctl -u feh-display -n 10 --no-pager >&2
+  tail -15 "$XDG_RUNTIME_DIR/weston-feh.log" >&2 2>/dev/null; exit 1
 fi
 # the container bind-mounts the pulse socket and won't start without it
 [[ -S $XDG_RUNTIME_DIR/pulse/native ]] || pulseaudio --start --exit-idle-time=-1 2>/dev/null

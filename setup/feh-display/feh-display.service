@@ -1,5 +1,6 @@
-# Waydroid/FEH display mode: weston on the physical monitor (hardware GL on the GTX 980 Ti via nouveau), run as
-# nick on tty9. Started/stopped by feh-dumper bin/display over SSH - no keyboard or console login needed.
+# Waydroid/FEH display mode: weston on the physical monitor (hardware GL on the GPU Waydroid renders on, picked by
+# feh-gpu), run as nick on tty9. Started/stopped by feh-dumper bin/display over SSH - no keyboard or console login
+# needed. /etc/default/feh-dumper may set FEH_GPU to override the GPU choice.
 [Unit]
 Description=Weston on the monitor for Waydroid/FEH (feh-dumper display mode)
 Documentation=file:///home/nick/feh-dumper/RUNBOOK.md
@@ -15,6 +16,7 @@ Group=nick
 WorkingDirectory=/home/nick
 PAMName=feh-display
 Environment=XDG_SESSION_TYPE=wayland
+EnvironmentFile=-/etc/default/feh-dumper
 TTYPath=/dev/tty9
 TTYReset=yes
 TTYVHangup=yes

@@ -1,0 +1,34 @@
+#!/bin/sh
+# The GPU Waydroid renders on, picked by the same rule as Waydroid's own tools/helpers/gpu.py (getDriNode), so the
+# host compositor and Android always agree: the first render node whose kernel driver isn't nvidia. Waydroid can't
+# render on NVIDIA's proprietary driver; it falls back to software rendering, which hangs FEH. FEH_GPU (a
+# /dev/dri/by-path id such as pci-0000:03:00.0, e.g. set in /etc/default/feh-dumper) overrides the choice; if it
+# names a different card than Waydroid would pick, also set drm_device in /var/lib/waydroid/waydroid.cfg.
+# Prints "<render-node> <card-node> <kernel-driver>", e.g. "/dev/dri/renderD128 /dev/dri/card0 nouveau".
+# Used by setup/feh-display/weston-feh (installed in /usr/local/lib/feh-display) and bin/_gpu.sh.
+set -eu
+
+driver() {  # kernel driver of a DRM node, e.g. renderD128 -> nouveau
+    sed -n 's/^DRIVER=//p' "/sys/class/drm/$1/device/uevent" 2>/dev/null
+}
+
+render=
+if [ -n "${FEH_GPU:-}" ]; then
+    render=$(readlink -f "/dev/dri/by-path/$FEH_GPU-render" 2>/dev/null) || true
+    [ -c "$render" ] || { echo "feh-gpu: FEH_GPU=$FEH_GPU has no render node in /dev/dri/by-path" >&2; exit 1; }
+else
+    for node in /dev/dri/renderD*; do   # the glob sorts, like Waydroid's sorted(glob(...))
+        [ -c "$node" ] || continue
+        [ "$(driver "${node##*/}")" = nvidia ] && continue
+        render=$node
+        break
+    done
+    [ -n "$render" ] || { echo "feh-gpu: no render node with a non-nvidia (Mesa) driver in /dev/dri" >&2; exit 1; }
+fi
+
+card=
+for c in "/sys/class/drm/${render##*/}/device/drm/"card*; do
+    [ -e "$c" ] && { card=/dev/dri/${c##*/}; break; }
+done
+[ -n "$card" ] || { echo "feh-gpu: $render has no matching card node" >&2; exit 1; }
+echo "$render $card $(driver "${render##*/}")"

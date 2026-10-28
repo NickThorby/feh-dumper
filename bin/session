@@ -2,8 +2,8 @@
 # (Re)start the Waydroid session headless and wait for Android to boot. Also the only thing that
 # reliably un-freezes adbd (a `waydroid container restart` does not).
 #   bin/session            as your user, not root (it uses sudo for `waydroid shell`)
-#   bin/session --props    then print the ABIs + Build identity FEH cares about
-# For anything interactive, use bin/display at the physical console instead.
+#   bin/session --props    then print the ABIs + Build identity FEH cares about, and the GPU on both sides
+# For anything interactive, use bin/display (monitor mode) instead.
 set -uo pipefail
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 source "$ROOT/bin/_gpu.sh"
@@ -30,7 +30,7 @@ for _ in $(seq 1 48); do
   echo -n "."; sleep 5
 done
 [[ $(prop sys.boot_completed) == 1 ]] || { echo; echo "not booted after 4 min: see logs/session.log" >&2; exit 1; }
-gralloc_ok || exit 1
+gralloc_ok; gpu_ok=$?
 
 if [[ ${1:-} == --props ]]; then
   echo "abi:           $(prop ro.product.cpu.abilist)   (must include arm64-v8a)"
@@ -39,4 +39,10 @@ if [[ ${1:-} == --props ]]; then
   for p in ro.product.name ro.product.model ro.product.device ro.build.fingerprint ro.build.type; do
     printf '%-22s %s\n' "$p:" "$(prop $p)"
   done
+  # printed even when gralloc_ok failed: after a GPU swap this is what you want to see
+  echo "gpu (host):    $GPU_DRIVER, $GPU_RENDER + $GPU_CARD, PCI $GPU_PCI"
+  for p in gralloc.gbm.device ro.hardware.vulkan ro.hardware.egl; do
+    printf '%-22s %s\n' "$p:" "$(prop $p)"
+  done
 fi
+exit "$gpu_ok"
