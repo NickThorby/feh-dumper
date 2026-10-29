@@ -13,8 +13,8 @@ game's raw formats is not done here.
 ## Quick start
 
 Tested on Debian 13 (kernel 6.12) with an Intel i7-8700K, a spare monitor and a USB mouse. The GPU must have a
-**Mesa** driver, because Waydroid can't render on NVIDIA's proprietary one. We use a GTX 980 Ti on nouveau, being
-replaced by an Intel Arc A380 on i915 (RUNBOOK, [Changing the GPU](RUNBOOK.md#changing-the-gpu)).
+**Mesa** driver, because Waydroid can't render on NVIDIA's proprietary one. Since 2026-10-29 the box runs an Intel
+Arc A380 on i915. Before that it was a GTX 980 Ti on nouveau (RUNBOOK, [Changing the GPU](RUNBOOK.md#changing-the-gpu)).
 **[`RUNBOOK.md`](RUNBOOK.md) is the full fresh-box procedure** with every prerequisite and quirk. This is the
 short version:
 

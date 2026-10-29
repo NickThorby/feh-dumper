@@ -5,8 +5,8 @@ Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Lin
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
-This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K, GTX 980 Ti on nouveau, being replaced by
-an Intel Arc A380: see [Changing the GPU](#changing-the-gpu)). It is fiddly; each
+This is the exact sequence we used (Debian 13, kernel 6.12, Intel i7-8700K; a GTX 980 Ti on nouveau, replaced on
+2026-10-29 by an Intel Arc A380 on i915, see [Changing the GPU](#changing-the-gpu)). It is fiddly; each
 prerequisite below is here because skipping it broke something. The `setup/` and `bin/` scripts automate the
 mechanical parts; see [Scripts](README.md#scripts) for what each does. Run everything from the repo root.
 
@@ -14,7 +14,8 @@ mechanical parts; see [Scripts](README.md#scripts) for what each does. Run every
 > - Linux x86_64 with an Intel CPU (→ **libhoudini**; on AMD use `libndk` instead).
 > - A GPU with a **Mesa** driver (real DRM/GL), needed for the stable `bin/display` step. Waydroid can't render on
 >   NVIDIA's proprietary driver.
->   - On this box that's the GTX 980 Ti on **nouveau**, until the Arc A380 on **i915** replaces it.
+>   - On this box that's an Intel Arc A380 on **i915** since 2026-10-29. Before that it was a GTX 980 Ti on
+>     **nouveau**.
 >   - The i7-8700K's iGPU is unusable: the motherboard has no outputs for it and no firmware setting to enable it.
 > - A spare **monitor and mouse** for the box. A keyboard is only needed for the first setup.
 > - About 25 GB free.
@@ -118,8 +119,12 @@ account" error and stabilises the home screen.
 
 ## 5. Run FEH — on a physical monitor
 
-Headless software rendering **hangs repeatedly** (adbd freezes, the container wedges) once FEH reaches its
-animated home screen. The reliable fix is hardware GL on a real screen:
+On the GTX 980 Ti (nouveau), headless rendering **hung repeatedly** (adbd froze, the container wedged) once FEH
+reached its animated home screen.
+- **On the Arc A380 (i915),** headless FEH reached and rendered that home screen without hanging.
+- **But Waydroid's auto-suspend** (`suspend_action = freeze`) froze the idle container after about a minute, so
+  long headless runs are still untested.
+- **Monitor mode stays the documented way to play**, since you interact with the screen anyway:
 
 1. Plug an **HDMI/DP monitor and a USB mouse** into the box. The monitor goes on the GPU's own ports.
 2. Once, install the display service: `sudo setup/04-feh-display.sh`. It installs `feh-display.service`, which
@@ -256,7 +261,13 @@ So a clean "after reboot, play/dump again" is just `bin/display` over SSH. No ke
 
 ## Changing the GPU
 
-Written for the GTX 980 Ti → **Intel Arc A380** swap; the same steps apply to any Mesa-driven card. The GPU is
+Written for, and used on 2026-10-29 for, the GTX 980 Ti → **Intel Arc A380** swap; the same steps apply to any
+Mesa-driven card.
+- **Swap-day results:** the Arc came up at `05:00.0` on i915, with DMC, GuC and HuC firmware loaded. There was no
+  Resizable BAR on this board (a 256 MiB BAR), which doesn't matter here.
+- After step 4, every check passed on the first try, and FEH ran visibly smoother than on nouveau.
+
+The GPU is
 picked at run time ([Quirks](#quirks--troubleshooting-everything-that-bit-us)), so nothing in this repo needs
 editing. What changes is Android's view of the GPU, which Waydroid only writes when it regenerates its config.
 
@@ -286,12 +297,23 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
    - Then `bin/display --stop`.
 7. **Optional: retry headless.** The headless hangs (§5) were only ever seen on nouveau. Run `bin/session`,
    launch FEH, and watch whether adbd and the container stay up. If they do, monitor mode becomes optional.
+   - **Result on 2026-10-29:** FEH was tapped past its title screen with `input tap` and reached the animated home
+     screen headless, with no hang and no crash. After about 60 s Waydroid froze the idle container (auto-suspend),
+     so the 10-minute soak only proved about a minute of rendering.
+   - **A real soak** needs the display kept awake first (e.g. `svc power stayon true` inside Android).
 8. Once FEH is verified on the new card, delete the restore point (`sudo rm -rf /srv/backup`).
 
 ---
 
 ## Quirks & troubleshooting (everything that bit us)
 
+- **adb says `device unauthorized`.** The image has `ro.adb.secure=1`, and Android has no stored host key
+  (`/data/misc/adb` is empty).
+  - The first `adb connect` from a host pops an **"Allow USB debugging?"** dialog on the Android screen, and adb stays
+    unauthorized until it's answered. Tick **Always allow from this computer** (monitor mode, or `input tap`) to
+    save the key.
+  - It only matters for the adb scripts (`bin/dump`, `bin/shell`, `bin/logcat`, `bin/gsf-id`). The capture
+    routine (§7) uses `sudo waydroid shell` instead.
 - **adbd over TCP freezes** (device shows `offline`, `waydroid shell`/scrcpy hang). Only a full
   `waydroid session stop && waydroid session start` (i.e. `bin/session`) restores it — a
   `waydroid container restart` does **not**. The container itself usually keeps running; `sudo waydroid shell`
@@ -314,9 +336,10 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
   {…datatransport…JobInfoSchedulerService}`). It isn't the game and only touches the telemetry database. Still,
   check `pidof` after stopping, force-stop again if needed, and re-run that round's rsync: on 2026-10-16 the
   re-sync found 0 changed files. Merge its output into `changes-$S.list` with `sort -u`.
-- **Which GPU renders?** Check, don't assume: `bin/session --props` prints it on both sides. On this box it's the GTX
-  980 Ti on **nouveau** (weston logs `GL renderer: NV120`) until the Arc A380 swap
-  ([Changing the GPU](#changing-the-gpu)).
+- **Which GPU renders?** Check, don't assume: `bin/session --props` prints it on both sides. On this box it's the Arc
+  A380 on **i915**. weston logs `GL renderer: Mesa Intel(R) Arc(tm) A380 Graphics (DG2)` (OpenGL ES 3.2, Mesa 25 on
+  the host), and Android reports `ro.hardware.vulkan=intel`. Until 2026-10-29 it was the GTX 980 Ti on nouveau
+  (`GL renderer: NV120`); see [Changing the GPU](#changing-the-gpu).
   - **How the GPU is picked:** `setup/feh-display/feh-gpu` uses Waydroid's own rule (`tools/helpers/gpu.py`): the
     first `/dev/dri/renderD*` whose kernel driver isn't `nvidia`. So weston and Android always pick the same card.
   - **To force one,** set `FEH_GPU=pci-…` (a `/dev/dri/by-path` id) in `/etc/default/feh-dumper`. If it differs from

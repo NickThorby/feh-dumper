@@ -4,11 +4,11 @@
 # render on NVIDIA's proprietary driver; it falls back to software rendering, which hangs FEH. FEH_GPU (a
 # /dev/dri/by-path id such as pci-0000:03:00.0, e.g. set in /etc/default/feh-dumper) overrides the choice; if it
 # names a different card than Waydroid would pick, also set drm_device in /var/lib/waydroid/waydroid.cfg.
-# Prints "<render-node> <card-node> <kernel-driver>", e.g. "/dev/dri/renderD128 /dev/dri/card0 nouveau".
+# Prints "<render-node> <card-node> <kernel-driver>", e.g. "/dev/dri/renderD128 /dev/dri/card0 i915".
 # Used by setup/feh-display/weston-feh (installed in /usr/local/lib/feh-display) and bin/_gpu.sh.
 set -eu
 
-driver() {  # kernel driver of a DRM node, e.g. renderD128 -> nouveau
+driver() {  # kernel driver of a DRM node, e.g. renderD128 -> i915
     sed -n 's/^DRIVER=//p' "/sys/class/drm/$1/device/uevent" 2>/dev/null
 }
 
