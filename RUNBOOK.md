@@ -1,7 +1,7 @@
 # Waydroid runbook — FEH from a fresh box to a dump
 
 Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Linux box and dump its data
-(done for 10.9.0 and 10.10.0), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
+(done for 10.9.0, 10.10.0 and 10.10.1), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
@@ -163,13 +163,15 @@ the top-level README.
 
 ## 7. A new FEH release: update and re-dump
 
-This is the routine used for 10.10.0 (2026-10-06) and its data-only update (2026-10-16), run entirely over SSH
-from the Mac with the drive attached there. Each release gets its own **new** dump folder,
-`feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game download,
+This is the routine used for 10.10.0 (2026-10-06), its data-only update (2026-10-16) and 10.10.1 (2026-10-30,
+the first on the Arc A380), run entirely over SSH from the Mac with the drive attached there. Each release gets
+its own **new** dump folder, `feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game download,
 same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
 version number; say in `INFO.txt` that it's a data update.
 
-**a. Screen up.** Plug in the monitor and mouse, then run `bin/display` over SSH (§5).
+**a. Screen up.** Plug in the monitor and mouse, then run `bin/display` over SSH (§5). While the box sits
+headless, Waydroid freezes the idle container, and `sudo waydroid shell` hangs until it's woken (Quirks), so bring
+the screen up before querying Android.
 
 **b. Update the APK (if there's a new one).** Waydroid's Play Store may not offer the update (it didn't for
 10.10.0). If not, download the **arm64-v8a** APK (the installed build is arm64; check `primaryCpuAbi` in
@@ -197,7 +199,7 @@ sudo bash -c 'du -sh ~nick/.local/share/waydroid/data/data/com.nintendo.zaba/fil
 
 Every switch between Japanese and English downloads that language's voices again (~2.6 GB JPJA or ~2.4 GB
 ENCommon). US ↔ EU is only ~26 MB of text. So keep the two English states next to each other: from JP go
-**JP → EU → US** (2026-10-16), and from US go **US → EU → JP** (2026-10-06). For each state, after its
+**JP → EU → US** (2026-10-16), and from US go **US → EU → JP** (2026-10-06, 2026-10-30). For each state, after its
 download finishes:
 
 ```sh
@@ -209,11 +211,13 @@ mkdir -p $STAGE/data/com.nintendo.zaba $STAGE/apk $STAGE/state-index/$S
 sudo rsync -a --out-format=%n $LIVE/ $STAGE/data/com.nintendo.zaba/ > $STAGE/changes-$S.list   # NO --delete
 sudo find $LIVE/files/assets -maxdepth 1 -type f -exec cp -p {} $STAGE/state-index/$S/ \;      # per-state index
 sudo chown -R $USER: $STAGE
+(cd $STAGE/state-index && sha256sum $S/* > ../state-index-$S.sha256)
 cd $LIVE/.. && sudo find com.nintendo.zaba -type f -print0 | sudo xargs -0 -P12 -n200 sha256sum | sort -k2 > $STAGE/$S-full.sha256
 ```
 
 The first round also copies `~/.local/share/waydroid/data/app/*/com.nintendo.zaba*/base.apk` to
-`$STAGE/apk/feh-<version>.apk`. Once staging is done you can switch the in-game language. The drive copy
+`$STAGE/apk/feh-<version>.apk` (plus `apk.sha256` from `sha256sum apk/feh-<version>.apk` in `$STAGE`). It should
+be byte-identical to the APK you installed. Once staging is done you can switch the in-game language. The drive copy
 comes from `$STAGE`, so it doesn't matter that the game deletes the old language's files.
 
 **d. Copy to the drive with tar over ssh** (run on the Mac, not `rsync`, see Quirks). The first round copies
@@ -222,7 +226,7 @@ the whole staging folder. Later rounds copy only that round's changed files:
 ```sh
 ssh box 'tar -C ~/feh-dumper/dumps -cf - feh-<version>-<date>' | tar -C <drive>/dumps -xf -        # round 1
 ssh box "cd $STAGE && { grep -v '/\$' changes-$S.list | sed 's|^|data/com.nintendo.zaba/|'; \
-  printf '%s\n' $S-full.sha256 changes-$S.list state-index/$S; } | tar -cf - -T -" | tar -C <dest> -xf -
+  printf '%s\n' $S-full.sha256 state-index-$S.sha256 changes-$S.list state-index/$S; } | tar -cf - -T -" | tar -C <dest> -xf -
 cd <dest>/data && shasum -a 256 -c ../$S-full.sha256 > ../verify-$S.out      # expect 0 failures, every round
 ```
 
@@ -266,6 +270,7 @@ Mesa-driven card.
 - **Swap-day results:** the Arc came up at `05:00.0` on i915, with DMC, GuC and HuC firmware loaded. There was no
   Resizable BAR on this board (a 256 MiB BAR), which doesn't matter here.
 - After step 4, every check passed on the first try, and FEH ran visibly smoother than on nouveau.
+- The first full dump on the Arc (10.10.1, 2026-10-30, §7) ran without a single problem on the box.
 
 The GPU is
 picked at run time ([Quirks](#quirks--troubleshooting-everything-that-bit-us)), so nothing in this repo needs
@@ -307,13 +312,21 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
 
 ## Quirks & troubleshooting (everything that bit us)
 
-- **adb says `device unauthorized`.** The image has `ro.adb.secure=1`, and Android has no stored host key
-  (`/data/misc/adb` is empty).
+- **adb says `device unauthorized`.** The image has `ro.adb.secure=1`, so Android only accepts host keys it has
+  stored.
   - The first `adb connect` from a host pops an **"Allow USB debugging?"** dialog on the Android screen, and adb stays
     unauthorized until it's answered. Tick **Always allow from this computer** (monitor mode, or `input tap`) to
     save the key.
+  - **Done on this box on 2026-10-30** for nick's `~/.android/adbkey`. The key is stored in
+    `~/.local/share/waydroid/data/misc/adb/adb_keys` and survived an `adb kill-server`. It needs redoing only for
+    a new host key or after wiping Waydroid's data.
   - It only matters for the adb scripts (`bin/dump`, `bin/shell`, `bin/logcat`, `bin/gsf-id`). The capture
     routine (§7) uses `sudo waydroid shell` instead.
+  - `adb devices` and `adb connect` start a host adb server that keeps running; `adb kill-server` when done.
+- **`sudo waydroid shell` hangs while the container is `FROZEN`.** Waydroid's auto-suspend
+  (`suspend_action = freeze`) freezes an idle headless container after about a minute. Check `sudo waydroid
+  status` first; `bin/display` (or `bin/session`) restarts the session and wakes it. A hung call leaves its
+  `waydroid shell` python process and `lxc-attach` behind; kill them by PID, not with `pkill -f`.
 - **adbd over TCP freezes** (device shows `offline`, `waydroid shell`/scrcpy hang). Only a full
   `waydroid session stop && waydroid session start` (i.e. `bin/session`) restores it — a
   `waydroid container restart` does **not**. The container itself usually keeps running; `sudo waydroid shell`
@@ -323,9 +336,18 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
 - **Whole-tree `rsync` stalls** on the ~85k-file scan over a USB drive. The Mac's `/usr/bin/rsync` is
   **openrsync** (protocol 29), which is the likely culprit. Stream with **tar over ssh** instead (§7d), copying
   only each round's changed files, then **hash-verify the whole state** to catch anything missed. Over the
-  Mac's Wi-Fi that runs at about 14 MB/s (8 GB in about 10 min).
+  Mac's Wi-Fi that runs at 5–14 MB/s (an 8 GB first round takes 10–26 min). Wrap the copy in `caffeinate -is`.
 - **Silent drive corruption** happens on flaky external drives — our per-round `shasum -c` caught a damaged
   `VOICE_*.ckb` that we re-copied. Always keep the manifests and re-verify.
+- **The drive can drop off USB mid-copy.** On 2026-10-30 the first round failed at about 2.9 GB.
+  - **How it shows:** tar printed `Write failed: Input/output error`, then `Device not configured`, then `No such
+    file or directory`, and macOS remounted the drive by itself a few minutes later. The Mac hadn't slept, so
+    look at the cable, hub or port.
+  - **Nothing is lost:** the box's staging copy is the source, and it isn't deleted until the end (§7e). Delete
+    the partial round on the drive and copy that round again, then verify it.
+  - **Check the volume:** `diskutil verifyVolume <disk>` before writing to the drive again. It runs on the
+    mounted volume. On 2026-10-30 it ended "appears to be OK", after a deferred repair of one old file outside
+    the dumps.
 - **Obfuscated-name files** (`SnZ77WFq`, `V9GiILGz`, `*~` in `files/assets/`) are FEH's mutable per-state asset
   catalog/index; they differ between language states — not corruption.
 - **Networking must persist:** every container start re-runs `waydroid-net.sh`, so the `nft_masq`/`loop`
