@@ -1,7 +1,7 @@
 # Waydroid runbook — FEH from a fresh box to a dump
 
 Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Linux box and dump its data
-(done for 10.9.0, 10.10.0 and 10.10.1), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
+(done for 10.9.0, 10.10.0, 10.10.1 and 10.11.0), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
@@ -163,8 +163,8 @@ the top-level README.
 
 ## 7. A new FEH release: update and re-dump
 
-This is the routine used for 10.10.0 (2026-10-06), its data-only update (2026-10-16) and 10.10.1 (2026-10-30,
-the first on the Arc A380), run entirely over SSH from the Mac with the drive attached there. Each release gets
+This is the routine used for 10.10.0 (2026-10-06), its data-only update (2026-10-16), 10.10.1 (2026-10-30,
+the first on the Arc A380) and 10.11.0 (2026-11-05), run entirely over SSH from the Mac with the drive attached there. Each release gets
 its own **new** dump folder, `feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game download,
 same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
 version number; say in `INFO.txt` that it's a data update.
@@ -199,7 +199,7 @@ sudo bash -c 'du -sh ~nick/.local/share/waydroid/data/data/com.nintendo.zaba/fil
 
 Every switch between Japanese and English downloads that language's voices again (~2.6 GB JPJA or ~2.4 GB
 ENCommon). US ↔ EU is only ~26 MB of text. So keep the two English states next to each other: from JP go
-**JP → EU → US** (2026-10-16), and from US go **US → EU → JP** (2026-10-06, 2026-10-30). For each state, after its
+**JP → EU → US** (2026-10-16, 2026-11-05), and from US go **US → EU → JP** (2026-10-06, 2026-10-30). For each state, after its
 download finishes:
 
 ```sh
@@ -336,7 +336,7 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
 - **Whole-tree `rsync` stalls** on the ~85k-file scan over a USB drive. The Mac's `/usr/bin/rsync` is
   **openrsync** (protocol 29), which is the likely culprit. Stream with **tar over ssh** instead (§7d), copying
   only each round's changed files, then **hash-verify the whole state** to catch anything missed. Over the
-  Mac's Wi-Fi that runs at 5–14 MB/s (an 8 GB first round takes 10–26 min). Wrap the copy in `caffeinate -is`.
+  Mac's Wi-Fi that runs at 5–15 MB/s (an 8 GB first round takes 10–26 min). Wrap the copy in `caffeinate -is`.
 - **Silent drive corruption** happens on flaky external drives — our per-round `shasum -c` caught a damaged
   `VOICE_*.ckb` that we re-copied. Always keep the manifests and re-verify.
 - **The drive can drop off USB mid-copy.** On 2026-10-30 the first round failed at about 2.9 GB.
@@ -358,6 +358,11 @@ editing. What changes is Android's view of the GPU, which Waydroid only writes w
   {…datatransport…JobInfoSchedulerService}`). It isn't the game and only touches the telemetry database. Still,
   check `pidof` after stopping, force-stop again if needed, and re-run that round's rsync: on 2026-10-16 the
   re-sync found 0 changed files. Merge its output into `changes-$S.list` with `sort -u`.
+- **FEH can sit on its title loading screen after an update.** On 2026-11-05 the first launch of 10.11.0 stayed on
+  the spinner for over a minute, then carried on by itself. Check `dumpsys connectivity` shows `VALIDATED` and
+  `ping` works from `sudo waydroid shell`, then give it a few minutes before restarting anything. The cause wasn't
+  established: its last log line was `PlayCore … AgeSignalsService : Initiate binding to the service`, and the Play
+  Store had updated itself at the same moment.
 - **Which GPU renders?** Check, don't assume: `bin/session --props` prints it on both sides. On this box it's the Arc
   A380 on **i915**. weston logs `GL renderer: Mesa Intel(R) Arc(tm) A380 Graphics (DG2)` (OpenGL ES 3.2, Mesa 25 on
   the host), and Android reports `ro.hardware.vulkan=intel`. Until 2026-10-29 it was the GTX 980 Ti on nouveau
