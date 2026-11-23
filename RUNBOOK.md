@@ -1,7 +1,8 @@
 # Waydroid runbook — FEH from a fresh box to a dump
 
 Everything needed to get Fire Emblem Heroes running in Waydroid on a **new** Linux box and dump its data
-(done for 10.9.0, 10.10.0, 10.10.1 and 10.11.0), and to re-dump it when a new release comes out (§7). Waydroid works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
+(done for 10.9.0, 10.10.0, 10.10.1 and 10.11.0), and to re-dump it when a new release comes out (§7). Waydroid
+works where true emulators don't (see [Why emulators fail](README.md#why-emulators-fail)):
 its LineageOS image reports `Build.PRODUCT=lineage_waydroid_x86_64` — no `"sdk"` — so FEH's `isEmulator()`
 self-destruct never fires.
 
@@ -163,11 +164,15 @@ the top-level README.
 
 ## 7. A new FEH release: update and re-dump
 
-This is the routine used for 10.10.0 (2026-10-06), its data-only update (2026-10-16), 10.10.1 (2026-10-30,
-the first on the Arc A380) and 10.11.0 (2026-11-05), run entirely over SSH from the Mac with the drive attached there. Each release gets
-its own **new** dump folder, `feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game download,
-same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
-version number; say in `INFO.txt` that it's a data update.
+This is the routine used for these dumps:
+- 10.10.0 (2026-10-06) and its data-only update (2026-10-16)
+- 10.10.1 (2026-10-30), the first on the Arc A380
+- 10.11.0 (2026-11-05) and its data-only update (2026-11-23)
+
+It runs entirely over SSH from the Mac, with the drive attached there. Each release gets its own **new** dump
+folder, `feh-<version>-<date>/`, because existing dumps are read-only. A **data-only update** (new in-game
+download, same APK) keeps the real APK version and gets a new date, e.g. `feh-10.10.0-2026-10-16`. Don't invent a
+version number; say in `INFO.txt` that it's a data update. A data-only update skips step b.
 
 **a. Screen up.** Plug in the monitor and mouse, then run `bin/display` over SSH (§5). While the box sits
 headless, Waydroid freezes the idle container, and `sudo waydroid shell` hangs until it's woken (Quirks), so bring
@@ -198,9 +203,11 @@ sudo bash -c 'du -sh ~nick/.local/share/waydroid/data/data/com.nintendo.zaba/fil
 ```
 
 Every switch between Japanese and English downloads that language's voices again (~2.6 GB JPJA or ~2.4 GB
-ENCommon). US ↔ EU is only ~26 MB of text. So keep the two English states next to each other: from JP go
-**JP → EU → US** (2026-10-16, 2026-11-05), and from US go **US → EU → JP** (2026-10-06, 2026-10-30). For each state, after its
-download finishes:
+ENCommon). US ↔ EU is only ~26 MB of text. So keep the two English states next to each other:
+- from JP, go **JP → EU → US** (2026-10-16, 2026-11-05)
+- from US, go **US → EU → JP** (2026-10-06, 2026-10-30, 2026-11-23)
+
+For each state, after its download finishes:
 
 ```sh
 LIVE=~/.local/share/waydroid/data/data/com.nintendo.zaba

@@ -5,10 +5,11 @@ Dump Fire Emblem Heroes' game data yourself, without a rooted phone: run the gam
 straight off the host. The dumps feed the `fire-emblem-legends-data` catalogue (a separate repo); decoding the
 game's raw formats is not done here.
 
-> **Status (2026-11-05):** Fire Emblem Heroes runs in Waydroid. Complete, hash-verified data dumps (Japanese +
+> **Status (2026-11-23):** Fire Emblem Heroes runs in Waydroid. Complete, hash-verified data dumps (Japanese +
 > English voices, plus US/EU/Japanese text) exist for **10.9.0** (2026-09-30), **10.10.0** (2026-10-06, and its
-> data update on 2026-10-16), **10.10.1** (2026-10-30) and **10.11.0** (2026-11-05, 128,651 files). The
-> update-and-re-dump routine is [RUNBOOK §7](RUNBOOK.md#7-a-new-feh-release-update-and-re-dump).
+> data update on 2026-10-16), **10.10.1** (2026-10-30) and **10.11.0** (2026-11-05, and its data
+> update on 2026-11-23, 128,872 files). The update-and-re-dump routine is
+> [RUNBOOK §7](RUNBOOK.md#7-a-new-feh-release-update-and-re-dump).
 > True emulators don't work: see [Why emulators fail](#why-emulators-fail).
 
 ## Quick start
